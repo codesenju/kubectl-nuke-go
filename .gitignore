@@ -25,3 +25,9 @@ vendor/
 
 # OS generated files
 Thumbs.db
+
+# Act testing files
+.secrets
+.env
+*-event.json
+.actrc

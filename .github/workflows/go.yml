@@ -5,6 +5,8 @@ on:
     branches: [ main ]
   pull_request:
     branches: [ main ]
+  schedule:
+    - cron: '0 0 * * *'  # Run at midnight UTC (2 AM UTC+2) daily
 
 jobs:
   build:
@@ -15,11 +17,49 @@ jobs:
         uses: actions/setup-go@v5
         with:
           go-version: '1.22'
+      - name: Install make
+        run: sudo apt-get update && sudo apt-get install -y make
       - name: Download Go modules
         run: go mod download
-      - name: Build
-        run: |
-          VERSION=$(git describe --tags --exact-match 2>/dev/null || echo "dev")
-          go build -ldflags "-X main.version=$VERSION" -v ./cmd/kubectl-nuke
-      - name: Test
-        run: go test -v ./...
+      - name: Test All
+        run: make test-all
+      
+  # Additional nightly-specific job
+  nightly-extended:
+    if: github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        go-version: ['1.21', '1.22', '1.23']
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Go ${{ matrix.go-version }}
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ matrix.go-version }}
+      - name: Install make
+        run: sudo apt-get update && sudo apt-get install -y make
+      - name: Download Go modules
+        run: go mod download
+      - name: Test with Go ${{ matrix.go-version }}
+        run: make test-all
+
+  # Test cross-platform builds nightly
+  nightly-build-test:
+    if: github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        goos: [linux, darwin, windows]
+        goarch: [amd64, arm64]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+      - name: Build for ${{ matrix.goos }}/${{ matrix.goarch }}
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+        run: go build -o kubectl-nuke-${{ matrix.goos }}-${{ matrix.goarch }} ./cmd/kubectl-nuke
