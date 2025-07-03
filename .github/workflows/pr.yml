@@ -24,7 +24,9 @@ jobs:
           go install golang.org/x/lint/golint@latest
           golint ./...
       - name: Build
-        run: go build -v ./...
+        run: |
+          VERSION=$(git describe --tags --exact-match 2>/dev/null || echo "dev")
+          go build -ldflags "-X main.version=$VERSION" -v ./cmd/kubectl-nuke
       - name: Test
         run: go test -v ./...
       - name: Check go.mod/go.sum changes
