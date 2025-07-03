@@ -3,9 +3,8 @@ name: PR Checks
 on:
   pull_request_target:
     branches: [main]
-    types: [opened, synchronize, reopened, ready_for_review]
+    types: [opened, synchronize, reopened, ready_for_review, labeled]
 
-# These permissions are required for GitHub App-triggered PRs
 permissions:
   checks: write
   contents: read
@@ -13,12 +12,14 @@ permissions:
 
 jobs:
   lint-build-test:
-    # Bypass restrictions for GitHub App PRs
-    if: ${{ github.actor != 'dependabot[bot]' }}  # Keep this if you use Dependabot
+    # Run for all PRs including GitHub App created ones
+    if: |
+      !contains(github.event.pull_request.labels.*.name, 'skip-ci') &&
+      github.actor != 'dependabot[bot]'
     runs-on: ubuntu-latest
     
     steps:
-      - name: Checkout code (secure method for pull_request_target)
+      - name: Checkout code
         uses: actions/checkout@v4
         with:
           ref: ${{ github.event.pull_request.head.sha }}
