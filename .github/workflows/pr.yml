@@ -1,10 +1,9 @@
 name: PR Checks
 
 on:
-  pull_request:
+  pull_request_target:
     branches:
       - main
-      - 'feat/*'
 
 jobs:
   lint-build-test:
