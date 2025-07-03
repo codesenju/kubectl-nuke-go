@@ -74,14 +74,10 @@ winget:
       - plugin
       - cli
     repository:
-      owner: codesenju
+      owner: microsoft
       name: winget-pkgs
       branch: "kubectl-nuke-{{.Version}}"
       token: "{{ .Env.WINGET_GITHUB_TOKEN }}"
       pull_request:
         enabled: true
         draft: false
-        base:
-          owner: microsoft
-          name: winget-pkgs
-          branch: master
