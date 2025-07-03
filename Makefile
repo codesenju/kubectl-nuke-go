@@ -31,3 +31,12 @@ build-all:
 # Show current version that would be used
 version:
 	@echo $(VERSION)
+
+# Test install scripts
+test-install:
+	@echo "Testing install scripts..."
+	./test/test-install.sh
+
+# Test everything (Go tests + install scripts + builds)
+test-all: test test-install build-all
+	@echo "All tests completed successfully!"
