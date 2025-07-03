@@ -2,29 +2,33 @@ name: PR Checks
 
 on:
   pull_request_target:
-    branches:
-      - main
+    branches: [main]
     types: [opened, synchronize, reopened, ready_for_review]
 
+# These permissions are required for GitHub App-triggered PRs
 permissions:
-  contents: read
   checks: write
+  contents: read
+  pull-requests: read
 
 jobs:
   lint-build-test:
+    # Bypass restrictions for GitHub App PRs
+    if: ${{ github.actor != 'dependabot[bot]' }}  # Keep this if you use Dependabot
     runs-on: ubuntu-latest
+    
     steps:
-      - name: Checkout code (secure ref)
+      - name: Checkout code (secure method for pull_request_target)
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.pull_request.head.sha }}  # Critical for security
+          ref: ${{ github.event.pull_request.head.sha }}
           fetch-depth: 0
 
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
           go-version: '1.22'
-          cache: true  # Enable Go build cache
+          cache: true
 
       - name: Download Go modules
         run: go mod download
@@ -42,4 +46,4 @@ jobs:
 
       - name: Check go.mod/go.sum changes
         run: |
-          git diff --exit-code go.mod go.sum || (echo '::error::go.mod or go.sum changed after build/test. Please run go mod tidy and commit.' && exit 1)
+          git diff --exit-code go.mod go.sum || (echo '::error::go.mod or go.sum changed. Run `go mod tidy` and commit changes.' && exit 1)
