@@ -14,13 +14,21 @@ A kubectl plugin to forcefully delete Kubernetes resources, including namespaces
 
 ## Installation
 
-### Homebrew (Recommended)
+### Homebrew (macOS/Linux)
 
 The easiest way to install kubectl-nuke on macOS and Linux:
 
 ```sh
 brew tap codesenju/kubectl-nuke
 brew install kubectl-nuke
+```
+
+### Winget (Windows)
+
+The easiest way to install kubectl-nuke on Windows:
+
+```sh
+winget install codesenju.kubectl-nuke
 ```
 
 ### Download Pre-built Binary

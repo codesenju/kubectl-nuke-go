@@ -12,6 +12,7 @@ builds:
     goos:
       - linux
       - darwin
+      - windows
     goarch:
       - amd64
       - arm64
@@ -19,8 +20,7 @@ builds:
       - -s -w
 
 archives:
-  - formats: [tar.gz]
-    name_template: >-
+  - name_template: >-
       {{ .ProjectName }}-
       {{- .Os }}-
       {{- if eq .Arch "amd64" }}amd64
@@ -29,6 +29,9 @@ archives:
       - README.md
       - LICENSE
       - CHANGELOG.md
+    format_overrides:
+      - goos: windows
+        formats: [zip]
 
 checksum:
   name_template: 'checksums.txt'
@@ -53,3 +56,32 @@ homebrew_casks:
     homepage: "https://github.com/codesenju/kubectl-nuke-go"
     description: "kubectl plugin to forcefully delete Kubernetes resources"
     license: "MIT"
+
+# Winget configuration
+winget:
+  - name: kubectl-nuke
+    publisher: codesenju
+    short_description: "kubectl plugin to forcefully delete Kubernetes resources"
+    description: "A kubectl plugin to forcefully delete Kubernetes resources, including namespaces stuck in the Terminating state. It attempts a normal delete first, and if the resource is stuck, it forcefully removes finalizers."
+    homepage: "https://github.com/codesenju/kubectl-nuke-go"
+    license: "MIT"
+    license_url: "https://github.com/codesenju/kubectl-nuke-go/blob/main/LICENSE"
+    copyright: "Copyright (c) 2024 codesenju"
+    release_notes_url: "https://github.com/codesenju/kubectl-nuke-go/releases/tag/v{{.Version}}"
+    tags:
+      - kubectl
+      - kubernetes
+      - plugin
+      - cli
+    repository:
+      owner: codesenju
+      name: winget-pkgs
+      branch: "kubectl-nuke-{{.Version}}"
+      token: "{{ .Env.WINGET_GITHUB_TOKEN }}"
+      pull_request:
+        enabled: true
+        draft: false
+        base:
+          owner: microsoft
+          name: winget-pkgs
+          branch: master
