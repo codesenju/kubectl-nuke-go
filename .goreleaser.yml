@@ -42,3 +42,14 @@ changelog:
     exclude:
       - '^docs:'
       - '^test:'
+
+# Homebrew Cask configuration
+homebrew_casks:
+  - name: kubectl-nuke
+    repository:
+      owner: codesenju
+      name: homebrew-kubectl-nuke
+      token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
+    homepage: "https://github.com/codesenju/kubectl-nuke-go"
+    description: "kubectl plugin to forcefully delete Kubernetes resources"
+    license: "MIT"
