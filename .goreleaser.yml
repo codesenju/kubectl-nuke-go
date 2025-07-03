@@ -57,27 +57,27 @@ homebrew_casks:
     description: "kubectl plugin to forcefully delete Kubernetes resources"
     license: "MIT"
 
-# Winget configuration
-winget:
-  - name: kubectl-nuke
-    publisher: codesenju
-    short_description: "kubectl plugin to forcefully delete Kubernetes resources"
-    description: "A kubectl plugin to forcefully delete Kubernetes resources, including namespaces stuck in the Terminating state. It attempts a normal delete first, and if the resource is stuck, it forcefully removes finalizers."
-    homepage: "https://github.com/codesenju/kubectl-nuke-go"
-    license: "MIT"
-    license_url: "https://github.com/codesenju/kubectl-nuke-go/blob/main/LICENSE"
-    copyright: "Copyright (c) 2024 codesenju"
-    release_notes_url: "https://github.com/codesenju/kubectl-nuke-go/releases/tag/v{{.Version}}"
-    tags:
-      - kubectl
-      - kubernetes
-      - plugin
-      - cli
-    repository:
-      owner: microsoft
-      name: winget-pkgs
-      branch: "kubectl-nuke-{{.Version}}"
-      token: "{{ .Env.WINGET_GITHUB_TOKEN }}"
-      pull_request:
-        enabled: true
-        draft: false
+# # Winget configuration
+# winget:
+#   - name: kubectl-nuke
+#     publisher: codesenju
+#     short_description: "kubectl plugin to forcefully delete Kubernetes resources"
+#     description: "A kubectl plugin to forcefully delete Kubernetes resources, including namespaces stuck in the Terminating state. It attempts a normal delete first, and if the resource is stuck, it forcefully removes finalizers."
+#     homepage: "https://github.com/codesenju/kubectl-nuke-go"
+#     license: "MIT"
+#     license_url: "https://github.com/codesenju/kubectl-nuke-go/blob/main/LICENSE"
+#     copyright: "Copyright (c) 2024 codesenju"
+#     release_notes_url: "https://github.com/codesenju/kubectl-nuke-go/releases/tag/v{{.Version}}"
+#     tags:
+#       - kubectl
+#       - kubernetes
+#       - plugin
+#       - cli
+#     repository:
+#       owner: microsoft
+#       name: winget-pkgs
+#       branch: "kubectl-nuke-{{.Version}}"
+#       token: "{{ .Env.WINGET_GITHUB_TOKEN }}"
+#       pull_request:
+#         enabled: true
+#         draft: false
