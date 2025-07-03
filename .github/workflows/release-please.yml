@@ -4,11 +4,14 @@ on:
   push:
     branches:
       - main
+  # Add workflow_dispatch for manual triggering
+  workflow_dispatch:
 
 permissions:
   contents: write
   pull-requests: write
   issues: write
+  checks: write  # This is critical for PR checks
 
 jobs:
   release-please:
@@ -18,5 +21,7 @@ jobs:
         id: release
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
+          release-type: go  # Explicitly set release type
           config-file: .config/release-please-config.json
           manifest-file: .config/release-please-manifest.json
+          command: github  # Explicit command mode
