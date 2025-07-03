@@ -14,7 +14,16 @@ A kubectl plugin to forcefully delete Kubernetes resources, including namespaces
 
 ## Installation
 
-### Download the Pre-built Binary
+### Homebrew (Recommended)
+
+The easiest way to install kubectl-nuke on macOS and Linux:
+
+```sh
+brew tap codesenju/kubectl-nuke
+brew install kubectl-nuke
+```
+
+### Download Pre-built Binary
 
 You can download the latest release for your platform from the [Releases page](https://github.com/codesenju/kubectl-nuke-go/releases). For example, to download the Darwin (macOS) AMD64 binary:
 
@@ -32,7 +41,7 @@ tar -xzf kubectl-nuke-darwin-amd64.tar.gz
 Move the binary to a directory in your `PATH` (e.g., `/usr/local/bin`):
 
 ```sh
-sudo mv kubectl-nuke-darwin-amd64 /usr/local/bin/kubectl-nuke
+sudo mv kubectl-nuke /usr/local/bin/kubectl-nuke
 chmod +x /usr/local/bin/kubectl-nuke
 ```
 
@@ -53,21 +62,27 @@ sudo mv kubectl-nuke /usr/local/bin/
 ## Usage
 
 ```sh
-# Delete a namespace
+# Delete a namespace (standalone binary)
 kubectl-nuke [--kubeconfig KUBECONFIG] ns <namespace>
 kubectl-nuke [--kubeconfig KUBECONFIG] namespace <namespace>
-```
 
-## Using as a kubectl Plugin
-
-After installation, you can use this tool as a kubectl plugin:
-
-```sh
+# Delete a namespace (as kubectl plugin)
 kubectl nuke [--kubeconfig KUBECONFIG] ns <namespace>
 kubectl nuke [--kubeconfig KUBECONFIG] namespace <namespace>
 ```
 
-kubectl will automatically detect executables named `kubectl-<plugin>` in your PATH and allow you to invoke them as `kubectl <plugin>`.
+## Using as a kubectl Plugin
+
+After installation, you can use this tool as a kubectl plugin. kubectl will automatically detect executables named `kubectl-<plugin>` in your PATH and allow you to invoke them as `kubectl <plugin>`:
+
+```sh
+# These commands are equivalent:
+kubectl-nuke ns my-namespace
+kubectl nuke ns my-namespace
+
+# Both support all the same options:
+kubectl nuke --kubeconfig /path/to/config ns my-namespace
+```
 
 ## Changelog
 
