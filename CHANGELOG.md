@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [0.6.0](https://github.com/codesenju/kubectl-nuke-go/compare/prerelease-v0.5.4...prerelease-v0.6.0) (2025-07-03)
+
+
+### Features
+
+* Install script ([#30](https://github.com/codesenju/kubectl-nuke-go/issues/30)) ([b9ea9c6](https://github.com/codesenju/kubectl-nuke-go/commit/b9ea9c66eb048e54ce059232eff6ede3ca6d95a1))
+
 ## [0.5.4](https://github.com/codesenju/kubectl-nuke-go/compare/prerelease-v0.5.3...prerelease-v0.5.4) (2025-07-03)
 
 
