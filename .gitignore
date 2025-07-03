@@ -1,5 +1,4 @@
 # Binaries
-kubectl-nuke
 kubectl-nuke-*
 *.exe
 *.tar.gz

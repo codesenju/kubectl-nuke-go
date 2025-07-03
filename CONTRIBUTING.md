@@ -37,7 +37,7 @@ Thank you for considering contributing to this project! Your help is greatly app
 
 ## Project Structure
 
-- `main.go`: CLI entry point with Cobra commands
+- `cmd/kubectl-nuke/main.go`: CLI entry point with Cobra commands
 - `internal/kube/`: Core namespace deletion logic
 - `docs/`: Documentation files
 - Tests should be placed alongside the code they test

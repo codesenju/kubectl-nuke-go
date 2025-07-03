@@ -1,4 +1,4 @@
-module kubectl-nuke-go
+module github.com/codesenju/kubectl-nuke-go
 
 go 1.24.3
 
