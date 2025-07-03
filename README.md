@@ -41,7 +41,7 @@ chmod +x /usr/local/bin/kubectl-nuke
 Open your terminal in the project directory and run:
 
 ```sh
-go build -o kubectl-nuke
+go build -o kubectl-nuke ./cmd/kubectl-nuke
 ```
 
 Move the binary to a directory in your $PATH (if not already):

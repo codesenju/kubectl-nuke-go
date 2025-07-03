@@ -4,11 +4,10 @@ A kubectl plugin to forcefully delete Kubernetes resources, including namespaces
 
 ## Project Structure
 
-- `main.go`: Main entry point for the CLI tool with Cobra command structure
+- `cmd/kubectl-nuke/main.go`: Main entry point for the CLI tool with Cobra command structure
 - `internal/kube/`: Core namespace deletion logic and unit tests
   - `namespace.go`: Functions for deleting namespaces and removing finalizers
   - `namespace_test.go`: Unit tests for namespace operations
-- `cmd/`: Directory reserved for future subcommands or CLI organization
 - `docs/`: Additional documentation
   - `USAGE.md`: Detailed usage instructions and examples
   - `FAQ.md`: Frequently asked questions

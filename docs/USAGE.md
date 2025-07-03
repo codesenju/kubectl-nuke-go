@@ -35,7 +35,7 @@ Alternatively, you can build from source:
 ```sh
 git clone https://github.com/codesenju/kubectl-nuke-go.git
 cd kubectl-nuke-go
-go build -o kubectl-nuke main.go
+go build -o kubectl-nuke ./cmd/kubectl-nuke
 ```
 
 ## Usage
@@ -117,7 +117,7 @@ go test ./...
 
 ## Project Structure
 
-- `main.go`: CLI entry point with Cobra command structure
+- `cmd/kubectl-nuke/main.go`: CLI entry point with Cobra command structure
 - `internal/kube/`: Namespace deletion logic and tests
 - `cmd/`: Reserved for future CLI subcommands
 - `docs/`: Documentation
