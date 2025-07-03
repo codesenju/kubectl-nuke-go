@@ -46,6 +46,10 @@ changelog:
       - '^docs:'
       - '^test:'
 
+release:
+  replace_existing_draft: true
+  prerelease: auto
+
 # Homebrew Cask configuration
 homebrew_casks:
   - name: kubectl-nuke
