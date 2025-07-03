@@ -1,0 +1,27 @@
+# Binaries
+kubectl-nuke
+kubectl-nuke-*
+*.exe
+*.tar.gz
+*.zip
+
+# Build output
+*.out
+*.test
+
+# Dependency directories
+vendor/
+
+# IDE/editor files
+.vscode/
+.idea/
+*.swp
+*~
+.DS_Store
+
+# Test cache
+*.coverprofile
+*.log
+
+# OS generated files
+Thumbs.db
