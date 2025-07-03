@@ -23,17 +23,36 @@ brew tap codesenju/kubectl-nuke
 brew install kubectl-nuke
 ```
 
-### Winget (Windows)
+### Windows
 
-The easiest way to install kubectl-nuke on Windows:
+Download the latest Windows release from the [Releases page](https://github.com/codesenju/kubectl-nuke-go/releases/latest):
 
-```sh
-winget install codesenju.kubectl-nuke
+```powershell
+# Download the appropriate version for your architecture
+# For AMD64 (Intel/AMD 64-bit):
+curl -LO https://github.com/codesenju/kubectl-nuke-go/releases/latest/download/kubectl-nuke-go-windows-amd64.zip
+
+# For ARM64:
+curl -LO https://github.com/codesenju/kubectl-nuke-go/releases/latest/download/kubectl-nuke-go-windows-arm64.zip
+
+# Extract the ZIP file and add kubectl-nuke.exe to your PATH
 ```
 
-### Download Pre-built Binary
+Or manually:
+1. Go to the [Releases page](https://github.com/codesenju/kubectl-nuke-go/releases/latest)
+2. Download `kubectl-nuke-go-windows-amd64.zip` (or `kubectl-nuke-go-windows-arm64.zip` for ARM)
+3. Extract `kubectl-nuke.exe` from the ZIP file
+4. Add the executable to your system PATH
 
-You can download the latest release for your platform from the [Releases page](https://github.com/codesenju/kubectl-nuke-go/releases). For example, to download the Darwin (macOS) AMD64 binary:
+### Download Pre-built Binary (All Platforms)
+
+You can download the latest release for your platform from the [Releases page](https://github.com/codesenju/kubectl-nuke-go/releases). Available platforms:
+
+- **macOS**: `kubectl-nuke-go-darwin-amd64.tar.gz` (Intel) / `kubectl-nuke-go-darwin-arm64.tar.gz` (Apple Silicon)
+- **Linux**: `kubectl-nuke-go-linux-amd64.tar.gz` (Intel/AMD) / `kubectl-nuke-go-linux-arm64.tar.gz` (ARM)
+- **Windows**: `kubectl-nuke-go-windows-amd64.zip` (Intel/AMD) / `kubectl-nuke-go-windows-arm64.zip` (ARM)
+
+Example for macOS AMD64:
 
 ```sh
 VERSION=$(curl -s https://api.github.com/repos/codesenju/kubectl-nuke-go/releases/latest | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/')
