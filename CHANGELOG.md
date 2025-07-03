@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [0.1.0](https://github.com/codesenju/kubectl-nuke-go/compare/prerelease-v0.0.1...prerelease-v0.1.0) (2025-07-03)
+
+
+### Features
+
+* first release ([4ef26d1](https://github.com/codesenju/kubectl-nuke-go/commit/4ef26d1659eae69a864ba687cc04110e5a98ffcf))
+* first release ([939f8a4](https://github.com/codesenju/kubectl-nuke-go/commit/939f8a4b93a84e66400f99c7b2486c2c4290f55b))
+
 ## [0.4.1](https://github.com/codesenju/kubectl-delns-go/compare/prerelease-v0.4.0...prerelease-v0.4.1) (2025-07-02)
 
 
