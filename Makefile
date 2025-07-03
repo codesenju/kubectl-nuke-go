@@ -17,7 +17,7 @@ clean:
 
 # Run tests
 test:
-	go test ./...
+	go test -v ./...
 
 # Build for all platforms (similar to GitHub Actions)
 build-all:
