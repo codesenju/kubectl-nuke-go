@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [0.2.1](https://github.com/codesenju/kubectl-nuke-go/compare/prerelease-v0.2.0...prerelease-v0.2.1) (2025-07-03)
+
+
+### Bug Fixes
+
+* Bypass restrictions for GitHub App PRs ([#14](https://github.com/codesenju/kubectl-nuke-go/issues/14)) ([8a5d247](https://github.com/codesenju/kubectl-nuke-go/commit/8a5d2478297347a66c75c123fb57656f51dbc54a))
+* pr checks ([#15](https://github.com/codesenju/kubectl-nuke-go/issues/15)) ([2e0ecce](https://github.com/codesenju/kubectl-nuke-go/commit/2e0ecce68a7903f6a2e7df925d35b863c8b434b6))
+* pr checks pull_request_target ([#12](https://github.com/codesenju/kubectl-nuke-go/issues/12)) ([44899f2](https://github.com/codesenju/kubectl-nuke-go/commit/44899f2fd29c2019a13583fdd1e457b828706e4c))
+* pull_request_target ([#10](https://github.com/codesenju/kubectl-nuke-go/issues/10)) ([e317da0](https://github.com/codesenju/kubectl-nuke-go/commit/e317da0701cd1def6ed4471692392eccbdff338e))
+
 ## [0.2.0](https://github.com/codesenju/kubectl-nuke-go/compare/prerelease-v0.1.1...prerelease-v0.2.0) (2025-07-03)
 
 
