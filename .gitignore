@@ -7,6 +7,7 @@ kubectl-nuke-*
 # Build output
 *.out
 *.test
+dist/
 
 # Dependency directories
 vendor/
