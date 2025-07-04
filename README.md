@@ -4,7 +4,7 @@
 [![Go Report Card](https://goreportcard.com/badge/github.com/codesenju/kubectl-nuke-go)](https://goreportcard.com/report/github.com/codesenju/kubectl-nuke-go)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-![kuebctl-nuke-go-demo](./media/gif/kubectl-nuke-go-demo.gif)
+![kuebctl-nuke-go-demo](./media/gif/demo-kubectl-nuke-go.gif)
 
 A kubectl plugin to forcefully delete Kubernetes resources, including namespaces stuck in the Terminating state. It attempts a normal delete first, and if the resource is stuck, it forcefully removes finalizers.
 
