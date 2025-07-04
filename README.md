@@ -1,8 +1,10 @@
 # kubectl-nuke-go
 
-[![Go Reference](https://pkg.go.dev/badge/github.com/codesenju/kubectl-nuke-go.svg)](https://pkg.go.dev/github.com/codesenju/kubectl-nuke-go)
+<!-- [![Go Reference](https://pkg.go.dev/badge/github.com/codesenju/kubectl-nuke-go.svg)](https://pkg.go.dev/github.com/codesenju/kubectl-nuke-go) -->
 [![Go Report Card](https://goreportcard.com/badge/github.com/codesenju/kubectl-nuke-go)](https://goreportcard.com/report/github.com/codesenju/kubectl-nuke-go)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
+![kuebctl-nuke-go-demo](./media/gif/kubectl-nuke-go-demo.gif)
 
 A kubectl plugin to forcefully delete Kubernetes resources, including namespaces stuck in the Terminating state. It attempts a normal delete first, and if the resource is stuck, it forcefully removes finalizers.
 
@@ -135,6 +137,99 @@ kubectl nuke ns my-namespace
 
 # Both support all the same options:
 kubectl nuke --kubeconfig /path/to/config ns my-namespace
+```
+
+## Uninstallation
+
+### Quick Install Script Installation
+
+If you installed using the quick install script, the binary is typically located at:
+- **Unix-like systems**: `~/.local/bin/kubectl-nuke` (default) or your specified path
+- **Windows**: `%USERPROFILE%\.local\bin\kubectl-nuke.exe` (default) or your specified path
+
+To uninstall:
+
+#### Unix-like Systems (macOS/Linux)
+
+```sh
+# Remove the binary (default location)
+rm ~/.local/bin/kubectl-nuke
+
+# If you installed to a custom path, remove from that location
+# sudo rm /usr/local/bin/kubectl-nuke
+
+# Verify removal
+which kubectl-nuke
+```
+
+#### Windows (PowerShell)
+
+```powershell
+# Remove the binary (default location)
+Remove-Item "$env:USERPROFILE\.local\bin\kubectl-nuke.exe"
+
+# If you installed to a custom path, remove from that location
+# Remove-Item "C:\Program Files\kubectl-nuke\kubectl-nuke.exe"
+
+# Verify removal
+Get-Command kubectl-nuke -ErrorAction SilentlyContinue
+```
+
+### Homebrew Installation
+
+```sh
+brew uninstall kubectl-nuke
+brew untap codesenju/kubectl-nuke
+```
+
+### Manual Installation
+
+If you manually downloaded and installed the binary, remove it from wherever you placed it:
+
+```sh
+# Find the binary location
+which kubectl-nuke
+
+# Remove it (example locations)
+sudo rm /usr/local/bin/kubectl-nuke
+# or
+rm ~/bin/kubectl-nuke
+```
+
+### Build from Source
+
+If you built from source, remove the binary from where you placed it:
+
+```sh
+sudo rm /usr/local/bin/kubectl-nuke
+```
+
+### Cleaning Up PATH (Optional)
+
+If you added `~/.local/bin` to your PATH specifically for kubectl-nuke and want to remove it:
+
+#### Unix-like Systems
+
+```sh
+# Edit your shell configuration file
+nano ~/.bashrc  # or ~/.zshrc for zsh
+
+# Remove or comment out the line:
+# export PATH="$HOME/.local/bin:$PATH"
+
+# Reload your shell configuration
+source ~/.bashrc  # or source ~/.zshrc
+```
+
+#### Windows
+
+Remove the PATH entry through System Properties > Environment Variables, or if you added it via PowerShell profile:
+
+```powershell
+# Edit your PowerShell profile
+notepad $PROFILE
+
+# Remove the line that adds kubectl-nuke to PATH
 ```
 
 ## Changelog
