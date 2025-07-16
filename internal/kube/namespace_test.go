@@ -2,7 +2,6 @@ package kube
 
 import (
 	"context"
-	"errors"
 	"testing"
 
 	corev1 "k8s.io/api/core/v1"
@@ -40,9 +39,12 @@ func TestForceRemoveFinalizers(t *testing.T) {
 		Status:     corev1.NamespaceStatus{Phase: "Terminating"},
 	})
 	ctx := context.TODO()
-	err := ForceRemoveFinalizers(ctx, client, "finalizer-ns")
+	removed, err := ForceRemoveFinalizers(ctx, client, "finalizer-ns")
 	if err != nil {
 		t.Errorf("expected no error, got %v", err)
+	}
+	if !removed {
+		t.Errorf("expected finalizers to be removed, got removed=%v", removed)
 	}
 }
 
@@ -52,8 +54,32 @@ func TestForceRemoveFinalizers_NoFinalizers(t *testing.T) {
 		Status:     corev1.NamespaceStatus{Phase: "Terminating"},
 	})
 	ctx := context.TODO()
-	err := ForceRemoveFinalizers(ctx, client, "no-finalizer-ns")
-	if !errors.Is(err, errors.New("no finalizers to remove")) && err == nil {
-		t.Errorf("expected error for no finalizers, got %v", err)
+	removed, err := ForceRemoveFinalizers(ctx, client, "no-finalizer-ns")
+	if err != nil {
+		t.Errorf("expected no error, got %v", err)
+	}
+	if removed {
+		t.Errorf("expected no finalizers to be removed, got removed=%v", removed)
+	}
+}
+
+func TestForceDeletePods(t *testing.T) {
+	client := k8sfake.NewSimpleClientset(&corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{Name: "test-pod", Namespace: "test-ns"},
+		Status:     corev1.PodStatus{Phase: "Running"},
+	})
+	ctx := context.TODO()
+	err := ForceDeletePods(ctx, client, "test-ns", []string{"test-pod"})
+	if err != nil {
+		t.Errorf("expected no error, got %v", err)
+	}
+}
+
+func TestForceDeletePods_NotFound(t *testing.T) {
+	client := k8sfake.NewSimpleClientset()
+	ctx := context.TODO()
+	err := ForceDeletePods(ctx, client, "test-ns", []string{"nonexistent-pod"})
+	if err == nil {
+		t.Errorf("expected error for nonexistent pod, got nil")
 	}
 }

@@ -6,13 +6,17 @@
 
 ![kuebctl-nuke-go-demo](./media/gif/demo-kubectl-nuke-go.gif)
 
-A kubectl plugin to forcefully delete Kubernetes resources, including namespaces stuck in the Terminating state. It attempts a normal delete first, and if the resource is stuck, it forcefully removes finalizers.
+A kubectl plugin to forcefully delete Kubernetes resources, including namespaces stuck in the Terminating state and unresponsive pods. It provides both gentle and aggressive deletion modes to handle stuck resources.
 
 ## Features
 
-- Delete a namespace normally 
-- Detect and force-delete namespaces stuck in Terminating
-- User-friendly CLI output
+- **Namespace Deletion**: Delete namespaces with automatic finalizer removal for stuck resources
+- **Force Mode**: Aggressively delete all resources in a namespace before deletion (`--force` flag)
+- **Pod Force Deletion**: Force delete individual pods with grace period 0
+- **Multiple Resource Support**: Handles pods, services, deployments, configmaps, secrets, and more
+- **Smart Finalizer Removal**: Multiple strategies for removing stubborn finalizers
+- **User-friendly CLI**: Clear status messages with emoji indicators
+- **kubectl Plugin Compatible**: Works as both standalone binary and kubectl plugin
 
 ## Installation
 
@@ -116,14 +120,57 @@ sudo mv kubectl-nuke /usr/local/bin/
 
 ## Usage
 
-```sh
-# Delete a namespace (standalone binary)
-kubectl-nuke [--kubeconfig KUBECONFIG] ns <namespace>
-kubectl-nuke [--kubeconfig KUBECONFIG] namespace <namespace>
+### Namespace Deletion
 
-# Delete a namespace (as kubectl plugin)
-kubectl nuke [--kubeconfig KUBECONFIG] ns <namespace>
-kubectl nuke [--kubeconfig KUBECONFIG] namespace <namespace>
+```sh
+# Standard namespace deletion (standalone binary)
+kubectl-nuke ns <namespace>
+kubectl-nuke namespace <namespace>
+
+# Standard namespace deletion (as kubectl plugin)
+kubectl nuke ns <namespace>
+kubectl nuke namespace <namespace>
+
+# Force mode - aggressively delete all resources first
+kubectl-nuke ns <namespace> --force
+kubectl-nuke ns <namespace> -f
+
+# With custom kubeconfig
+kubectl-nuke --kubeconfig /path/to/config ns <namespace>
+kubectl nuke --kubeconfig /path/to/config ns <namespace> --force
+```
+
+### Pod Force Deletion
+
+```sh
+# Force delete a single pod (grace period 0)
+kubectl-nuke pod <pod-name> -n <namespace>
+
+# Force delete multiple pods
+kubectl-nuke pods <pod1> <pod2> <pod3> -n <namespace>
+
+# Using the 'po' alias (like kubectl)
+kubectl-nuke po <pod-name> -n <namespace>
+
+# As kubectl plugin
+kubectl nuke pod <pod-name> -n <namespace>
+kubectl nuke pods <pod1> <pod2> -n <namespace>
+```
+
+### Command Examples
+
+```sh
+# Delete a stuck namespace normally
+kubectl-nuke ns my-stuck-namespace
+
+# Aggressively delete a namespace and all its contents
+kubectl-nuke ns my-namespace --force
+
+# Force delete unresponsive pods
+kubectl-nuke pods nginx-123 redis-456 -n production
+
+# Clean up test environment completely
+kubectl-nuke ns test-env -f
 ```
 
 ## Using as a kubectl Plugin
@@ -135,8 +182,119 @@ After installation, you can use this tool as a kubectl plugin. kubectl will auto
 kubectl-nuke ns my-namespace
 kubectl nuke ns my-namespace
 
-# Both support all the same options:
-kubectl nuke --kubeconfig /path/to/config ns my-namespace
+# Force mode works the same way:
+kubectl-nuke ns my-namespace --force
+kubectl nuke ns my-namespace -f
+
+# Pod deletion also works as a plugin:
+kubectl-nuke pod stuck-pod -n my-namespace
+kubectl nuke pods pod1 pod2 -n my-namespace
+
+# All support custom kubeconfig:
+kubectl nuke --kubeconfig /path/to/config ns my-namespace --force
+```
+
+## Command Reference
+
+| Command | Description | Example |
+|---------|-------------|---------|
+| `ns\|namespace <name>` | Delete a namespace (standard mode) | `kubectl-nuke ns my-namespace` |
+| `ns\|namespace <name> -f` | Aggressively delete namespace and all contents | `kubectl-nuke ns my-namespace --force` |
+| `pod\|pods\|po <name>...` | Force delete pods with grace period 0 | `kubectl-nuke pods pod1 pod2 -n my-ns` |
+| `version` | Show version information | `kubectl-nuke version` |
+| `help` | Show help for any command | `kubectl-nuke help ns` |
+
+## Uninstallation
+
+### Quick Install Script Installation
+
+If you installed using the quick install script, the binary is typically located at:
+- **Unix-like systems**: `~/.local/bin/kubectl-nuke` (default) or your specified path
+- **Windows**: `%USERPROFILE%\.local\bin\kubectl-nuke.exe` (default) or your specified path
+
+To uninstall:
+
+#### Unix-like Systems (macOS/Linux)
+
+```sh
+# Remove the binary (default location)
+rm ~/.local/bin/kubectl-nuke
+
+# If you installed to a custom path, remove from that location
+# sudo rm /usr/local/bin/kubectl-nuke
+
+# Verify removal
+which kubectl-nuke
+```
+
+#### Windows (PowerShell)
+
+```powershell
+# Remove the binary (default location)
+Remove-Item "$env:USERPROFILE\.local\bin\kubectl-nuke.exe"
+
+# If you installed to a custom path, remove from that location
+# Remove-Item "C:\Program Files\kubectl-nuke\kubectl-nuke.exe"
+
+# Verify removal
+Get-Command kubectl-nuke -ErrorAction SilentlyContinue
+```
+
+### Homebrew Installation
+
+```sh
+brew uninstall kubectl-nuke
+brew untap codesenju/kubectl-nuke
+```
+
+### Manual Installation
+
+If you manually downloaded and installed the binary, remove it from wherever you placed it:
+
+```sh
+# Find the binary location
+which kubectl-nuke
+
+# Remove it (example locations)
+sudo rm /usr/local/bin/kubectl-nuke
+# or
+rm ~/bin/kubectl-nuke
+```
+
+### Build from Source
+
+If you built from source, remove the binary from where you placed it:
+
+```sh
+sudo rm /usr/local/bin/kubectl-nuke
+```
+
+### Cleaning Up PATH (Optional)
+
+If you added `~/.local/bin` to your PATH specifically for kubectl-nuke and want to remove it:
+
+#### Unix-like Systems
+
+```sh
+# Edit your shell configuration file
+nano ~/.bashrc  # or ~/.zshrc for zsh
+
+# Remove or comment out the line:
+# export PATH="$HOME/.local/bin:$PATH"
+
+# Reload your shell configuration
+source ~/.bashrc  # or source ~/.zshrc
+```
+
+#### Windows
+
+Remove the PATH entry through System Properties > Environment Variables, or if you added it via PowerShell profile:
+
+```powershell
+# Edit your PowerShell profile
+notepad $PROFILE
+
+# Remove the line that adds kubectl-nuke to PATH
 ```
 
 ## Uninstallation
