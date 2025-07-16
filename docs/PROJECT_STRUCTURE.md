@@ -1,13 +1,13 @@
 # kubectl-nuke-go
 
-A kubectl plugin to forcefully delete Kubernetes resources, including namespaces stuck in the Terminating state.
+A kubectl plugin to forcefully delete Kubernetes resources, including namespaces stuck in the Terminating state and unresponsive pods. Provides both gentle and aggressive deletion modes.
 
 ## Project Structure
 
 - `cmd/kubectl-nuke/main.go`: Main entry point for the CLI tool with Cobra command structure
-- `internal/kube/`: Core namespace deletion logic and unit tests
-  - `namespace.go`: Functions for deleting namespaces and removing finalizers
-  - `namespace_test.go`: Unit tests for namespace operations
+- `internal/kube/`: Core Kubernetes resource deletion logic and unit tests
+  - `resources.go`: Functions for deleting namespaces, pods, and removing finalizers
+  - `namespace_test.go`: Unit tests for all resource operations
 - `docs/`: Additional documentation
   - `USAGE.md`: Detailed usage instructions and examples
   - `FAQ.md`: Frequently asked questions
@@ -25,19 +25,26 @@ The tool uses Cobra CLI framework with the following command structure:
 
 ```
 kubectl-nuke
-├── ns|namespace <namespace>  # Delete a namespace
-├── version                   # Show version information
-└── help                      # Show help information
+├── ns|namespace <namespace>     # Delete a namespace
+│   └── --force|-f              # Aggressive deletion mode
+├── pod|pods|po <pod-name>...    # Force delete pods
+│   └── --namespace|-n          # Target namespace
+├── version                      # Show version information
+└── help                         # Show help information
 ```
 
 ## Key Features
 
-- **Subcommand support**: Uses `ns` or `namespace` subcommands
+- **Multiple resource types**: Supports namespaces and pods
+- **Dual deletion modes**: Standard and aggressive (--force) deletion
 - **kubectl plugin compatibility**: Works as `kubectl nuke`
-- **Force deletion**: Removes finalizers for stuck namespaces
+- **Multiple aliases**: `ns`/`namespace`, `pod`/`pods`/`po`
+- **Batch operations**: Delete multiple pods in one command
+- **Smart finalizer removal**: Multiple strategies for stuck resources
+- **Force pod deletion**: Grace period 0 for immediate termination
 - **User-friendly output**: Emoji indicators and clear status messages
-- **Comprehensive help**: Built-in help and examples
-- **Testable**: Unit tests for core functionality
+- **Comprehensive help**: Built-in help and examples for all commands
+- **Extensive testing**: Unit tests for all core functionality
 
 ## Getting Started
 

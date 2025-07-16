@@ -25,19 +25,32 @@ func main() {
 		Use:   "kubectl-nuke",
 		Short: "A kubectl plugin to forcefully delete Kubernetes resources",
 		Long: `kubectl-nuke is a kubectl plugin that can forcefully delete Kubernetes resources, 
-including namespaces stuck in Terminating state. It attempts a normal delete first, 
-and if the resource is stuck, it forcefully removes finalizers.`,
-		Example: `  # Delete a namespace using the 'ns' subcommand
+including namespaces stuck in Terminating state and unresponsive pods. It provides both 
+gentle and aggressive deletion modes to handle stuck resources effectively.
+
+Features:
+• Namespace deletion with automatic finalizer removal
+• Force mode for aggressive resource cleanup (--force flag)
+• Pod force deletion with grace period 0
+• Multiple resource type support (pods, services, deployments, etc.)
+• Smart finalizer removal with multiple strategies`,
+		Example: `  # Delete a namespace (standard mode)
   kubectl-nuke ns my-namespace
   
-  # Delete a namespace using the 'namespace' subcommand  
-  kubectl-nuke namespace my-namespace
+  # Aggressively delete a namespace and all its contents
+  kubectl-nuke ns my-namespace --force
+  kubectl-nuke ns my-namespace -f
+  
+  # Force delete unresponsive pods
+  kubectl-nuke pod stuck-pod -n my-namespace
+  kubectl-nuke pods pod1 pod2 pod3 -n production
   
   # Use with custom kubeconfig
-  kubectl-nuke --kubeconfig /path/to/config ns my-namespace
+  kubectl-nuke --kubeconfig /path/to/config ns my-namespace --force
   
   # Use as kubectl plugin
-  kubectl nuke ns my-namespace`,
+  kubectl nuke ns my-namespace -f
+  kubectl nuke pods nginx-123 redis-456 -n default`,
 	}
 
 	// Add kubeconfig flag to root command
@@ -57,6 +70,7 @@ and if the resource is stuck, it forcefully removes finalizers.`,
 	}
 
 	// Create namespace command
+	var forceDelete bool
 	var nsCmd = &cobra.Command{
 		Use:     "ns <namespace>",
 		Aliases: []string{"namespace"},
@@ -66,20 +80,55 @@ and if the namespace is stuck in Terminating state, it will forcefully remove fi
 
 The command will:
 1. Check the current state of the namespace
-2. Attempt a normal delete operation
+2. Attempt a normal delete operation (or aggressive delete with --force)
 3. If the namespace gets stuck in Terminating state, remove finalizers to force deletion
-4. Wait and verify the namespace is fully deleted`,
+4. Wait and verify the namespace is fully deleted
+
+With --force flag, it will aggressively delete all resources first before deleting the namespace.`,
 		Example: `  # Delete a namespace
   kubectl-nuke ns my-namespace
+  
+  # Aggressively delete a namespace and all its contents
+  kubectl-nuke ns my-namespace --force
+  kubectl-nuke ns my-namespace -f
   
   # Delete a namespace with custom kubeconfig
   kubectl-nuke --kubeconfig /path/to/config ns my-namespace`,
 		Args: cobra.ExactArgs(1),
 		Run:  deleteNamespace,
 	}
+	nsCmd.Flags().BoolVarP(&forceDelete, "force", "f", false, "Aggressively delete all resources in the namespace first (DESTRUCTIVE)")
+
+	// Create pod command for force deleting pods
+	var podCmd = &cobra.Command{
+		Use:     "pod <pod-name> [pod-name2] [pod-name3]...",
+		Aliases: []string{"pods", "po"},
+		Short:   "Force delete pods with grace period 0 (DESTRUCTIVE)",
+		Long: `Force delete one or more pods with grace period 0 (immediate termination).
+This command will forcefully terminate pods without waiting for graceful shutdown.
+Use this when pods are stuck or unresponsive.
+
+⚠️  WARNING: This bypasses graceful shutdown and may cause data loss or corruption
+if the application doesn't handle sudden termination properly.`,
+		Example: `  # Force delete a single pod in default namespace
+  kubectl-nuke pod my-pod
+  
+  # Force delete a pod in a specific namespace
+  kubectl-nuke pod my-pod -n my-namespace
+  
+  # Force delete multiple pods
+  kubectl-nuke pods pod1 pod2 pod3 -n my-namespace
+  
+  # Use with custom kubeconfig
+  kubectl-nuke --kubeconfig /path/to/config pod my-pod -n my-namespace`,
+		Args: cobra.MinimumNArgs(1),
+		Run:  nukePods,
+	}
+	podCmd.Flags().StringP("namespace", "n", "default", "namespace to delete pods from")
 
 	rootCmd.AddCommand(versionCmd)
 	rootCmd.AddCommand(nsCmd)
+	rootCmd.AddCommand(podCmd)
 
 	if err := rootCmd.Execute(); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
@@ -91,7 +140,15 @@ func deleteNamespace(cmd *cobra.Command, args []string) {
 	namespace := args[0]
 	ctx := context.TODO()
 
-	fmt.Printf("🔍 Checking namespace: %s\n", namespace)
+	// Get the force flag value
+	forceDelete, _ := cmd.Flags().GetBool("force")
+
+	if forceDelete {
+		fmt.Printf("💥 FORCE MODE: Preparing to aggressively delete namespace: %s\n", namespace)
+		fmt.Printf("⚠️  WARNING: This will forcefully delete ALL resources in the namespace!\n")
+	} else {
+		fmt.Printf("🔍 Checking namespace: %s\n", namespace)
+	}
 
 	// Build config from flags
 	config, err := clientcmd.BuildConfigFromFlags("", kubeconfig)
@@ -114,9 +171,28 @@ func deleteNamespace(cmd *cobra.Command, args []string) {
 		os.Exit(1)
 	}
 
-	fmt.Printf("📋 Namespace %s is in '%s' state.\n", ns.Name, ns.Status.Phase)
+	if !forceDelete {
+		fmt.Printf("📋 Namespace %s is in '%s' state.\n", ns.Name, ns.Status.Phase)
+	}
 
-	// Use internal/kube package for deletion logic
+	// If force mode, use aggressive deletion
+	if forceDelete {
+		err = kube.NukeNamespace(ctx, clientset, namespace)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "❌ Failed to force delete namespace %s: %v\n", namespace, err)
+			os.Exit(1)
+		}
+
+		// Wait for complete deletion with longer timeout for force mode
+		if kube.WaitForNamespaceDeletion(ctx, clientset, namespace, 30) {
+			fmt.Printf("💥 Namespace %s has been completely nuked!\n", namespace)
+		} else {
+			fmt.Printf("⚠️  Namespace %s may still exist. Check manually with: kubectl get ns %s\n", namespace, namespace)
+		}
+		return
+	}
+
+	// Use internal/kube package for normal deletion logic
 	deleted, terminating, err := kube.DeleteNamespace(ctx, clientset, namespace)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "❌ Failed to delete namespace %s: %v\n", namespace, err)
@@ -125,19 +201,23 @@ func deleteNamespace(cmd *cobra.Command, args []string) {
 
 	if terminating {
 		fmt.Printf("⚠️  Namespace %s is already in Terminating state. Attempting to force delete by removing finalizers...\n", namespace)
-		err = kube.ForceRemoveFinalizers(ctx, clientset, namespace)
+		removed, err := kube.ForceRemoveFinalizers(ctx, clientset, namespace)
 		if err != nil {
 			fmt.Printf("❌ Failed to remove finalizers for %s: %v\n", namespace, err)
 			os.Exit(1)
 		}
-		fmt.Printf("🔧 Finalizers removed for %s. Waiting for namespace to be deleted...\n", namespace)
+		if removed {
+			fmt.Printf("🔧 Finalizers removed for %s. Waiting for namespace to be deleted...\n", namespace)
+		} else {
+			fmt.Printf("ℹ️  No finalizers found on %s. Namespace should delete naturally or may need manual intervention.\n", namespace)
+		}
 		waitForDeletion(ctx, clientset, namespace, 10)
 		return
 	}
 
 	if deleted {
 		fmt.Printf("📤 Delete request sent for namespace %s. Waiting to see if it terminates...\n", namespace)
-		
+
 		// Wait and check if namespace is deleted, up to 5 seconds
 		if waitForDeletion(ctx, clientset, namespace, 5) {
 			return
@@ -149,12 +229,16 @@ func deleteNamespace(cmd *cobra.Command, args []string) {
 		nsCheck, err := clientset.CoreV1().Namespaces().Get(ctx, namespace, metav1.GetOptions{})
 		if err == nil && nsCheck.Status.Phase == "Terminating" {
 			fmt.Printf("🔧 Namespace %s is stuck in Terminating. Forcibly removing finalizers...\n", namespace)
-			err = kube.ForceRemoveFinalizers(ctx, clientset, namespace)
+			removed, err := kube.ForceRemoveFinalizers(ctx, clientset, namespace)
 			if err != nil {
 				fmt.Printf("❌ Failed to remove finalizers for %s: %v\n", namespace, err)
 				os.Exit(1)
 			}
-			fmt.Printf("🔧 Finalizers removed for %s. Waiting for namespace to be deleted...\n", namespace)
+			if removed {
+				fmt.Printf("🔧 Finalizers removed for %s. Waiting for namespace to be deleted...\n", namespace)
+			} else {
+				fmt.Printf("ℹ️  No finalizers found on %s. Namespace should delete naturally or may need manual intervention.\n", namespace)
+			}
 			waitForDeletion(ctx, clientset, namespace, 10)
 		} else {
 			fmt.Printf("✅ Namespace %s deleted or not stuck in Terminating.\n", namespace)
@@ -174,6 +258,40 @@ func waitForDeletion(ctx context.Context, clientset kubernetes.Interface, namesp
 	}
 	fmt.Printf("⚠️  Namespace %s was not deleted after %d seconds. It may still be terminating or stuck.\n", namespace, maxAttempts*2)
 	return false
+}
+
+func nukePods(cmd *cobra.Command, args []string) {
+	podNames := args
+	ctx := context.TODO()
+
+	// Get the namespace flag value
+	namespace, _ := cmd.Flags().GetString("namespace")
+
+	fmt.Printf("💥 FORCE DELETE MODE: Preparing to force delete %d pod(s) in namespace: %s\n", len(podNames), namespace)
+	fmt.Printf("⚠️  WARNING: This will forcefully terminate pods without graceful shutdown!\n")
+
+	// Build config from flags
+	config, err := clientcmd.BuildConfigFromFlags("", kubeconfig)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "❌ Failed to load kubeconfig: %v\n", err)
+		os.Exit(1)
+	}
+
+	// Create clientset
+	clientset, err := kubernetes.NewForConfig(config)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "❌ Failed to create Kubernetes client: %v\n", err)
+		os.Exit(1)
+	}
+
+	// Use the ForceDeletePods function
+	err = kube.ForceDeletePods(ctx, clientset, namespace, podNames)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "⚠️  Some pods failed to delete: %v\n", err)
+		// Don't exit with error code since some pods might have been deleted successfully
+	}
+
+	fmt.Printf("✅ Force delete operation completed!\n")
 }
 
 func homeDir() string {

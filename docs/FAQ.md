@@ -2,7 +2,7 @@
 
 ## What does this tool do?
 
-kubectl-nuke is a kubectl plugin that forcefully deletes Kubernetes resources, particularly namespaces stuck in the Terminating state. It removes finalizers when necessary to complete the deletion process.
+kubectl-nuke is a kubectl plugin that forcefully deletes Kubernetes resources, including namespaces stuck in the Terminating state and unresponsive pods. It provides both gentle and aggressive deletion modes, automatically removes finalizers when necessary, and can force-delete pods with grace period 0.
 
 ## How is this different from regular kubectl delete?
 
@@ -21,13 +21,20 @@ Yes, the tool is designed to be scriptable and can be used in automation pipelin
 Download the appropriate `kubectl-nuke` binary for your platform from the [Releases](https://github.com/codesenju/kubectl-nuke-go/releases) page, make it executable, and run:
 
 ```sh
-# Direct usage
+# Namespace deletion (direct usage)
 ./kubectl-nuke ns <namespace>
 ./kubectl-nuke namespace <namespace>
+./kubectl-nuke ns <namespace> --force  # Aggressive mode
+
+# Pod force deletion (direct usage)
+./kubectl-nuke pod <pod-name> -n <namespace>
+./kubectl-nuke pods <pod1> <pod2> -n <namespace>
 
 # As kubectl plugin (after installing to PATH)
 kubectl nuke ns <namespace>
-kubectl nuke namespace <namespace>
+kubectl nuke namespace <namespace> --force
+kubectl nuke pod <pod-name> -n <namespace>
+kubectl nuke pods <pod1> <pod2> -n <namespace>
 ```
 
 ## What's the difference between 'ns' and 'namespace' commands?
@@ -56,7 +63,52 @@ The tool will report an error that the namespace was not found, similar to stand
 
 ## How long does it wait before force-deleting?
 
-The tool waits up to 10 seconds for a normal deletion to complete. If the namespace is still in Terminating state after that, it will remove finalizers and wait up to 20 more seconds for the forced deletion to complete.
+For namespace deletion:
+- Standard mode: Waits up to 10 seconds for normal deletion, then removes finalizers and waits up to 20 more seconds
+- Force mode (`--force`): Waits up to 30 seconds for complete deletion after aggressive resource cleanup
+
+For pod deletion: Immediate termination with grace period 0 (no waiting)
+
+## What's the difference between standard and force mode for namespaces?
+
+- **Standard mode** (`kubectl-nuke ns <namespace>`): Attempts normal deletion first, removes finalizers only if stuck
+- **Force mode** (`kubectl-nuke ns <namespace> --force`): Immediately force-deletes all resources (pods, services, deployments, etc.) with grace period 0, then deletes the namespace
+
+## What does pod force deletion do?
+
+Pod force deletion (`kubectl-nuke pod <pod-name> -n <namespace>`) immediately terminates pods with grace period 0, bypassing graceful shutdown. This is useful for:
+- Stuck or unresponsive pods
+- Pods that won't terminate normally
+- Emergency cleanup situations
+
+⚠️ **Warning**: This can cause data loss if applications don't handle sudden termination properly.
+
+## Can I delete multiple pods at once?
+
+Yes! You can specify multiple pod names:
+
+```sh
+kubectl-nuke pods pod1 pod2 pod3 -n my-namespace
+kubectl-nuke po nginx-123 redis-456 mysql-789 -n production
+```
+
+## What aliases are supported?
+
+- Namespace: `ns`, `namespace`
+- Pod: `pod`, `pods`, `po` (matching kubectl conventions)
+
+## When should I use force mode vs standard mode?
+
+**Use standard mode when:**
+- Normal cleanup is acceptable
+- You want to respect graceful shutdown periods
+- Working in production environments
+
+**Use force mode when:**
+- Namespace is completely stuck
+- You need immediate cleanup (testing/development)
+- Resources are unresponsive to normal deletion
+- Emergency situations requiring immediate action
 
 ## How do I contribute?
 
@@ -64,7 +116,8 @@ See [CONTRIBUTING.md](../CONTRIBUTING.md) for contribution guidelines.
 
 ## How do I get help?
 
-- Run `kubectl-nuke --help` for command help
+- Run `kubectl-nuke --help` for general command help
 - Run `kubectl-nuke ns --help` for namespace command help
+- Run `kubectl-nuke pod --help` for pod command help
 - Check the documentation in the `docs/` folder
 - Open an issue on GitHub for bugs or feature requests
