@@ -49,8 +49,29 @@ changelog:
 release:
   replace_existing_draft: true
   prerelease: auto
+  name_template: "{{.ProjectName}} {{.Version}}"
+  header: |
+    ## What's Changed
+    
+    This release includes the following changes:
+  footer: |
+    ## Installation
+    
+    ### Quick Install Script
+    ```bash
+    # Unix-like systems (macOS/Linux)
+    curl -fsSL https://raw.githubusercontent.com/codesenju/kubectl-nuke-go/main/install.sh | bash
+    
+    # Windows (PowerShell)
+    Invoke-Expression (Invoke-WebRequest -Uri "https://raw.githubusercontent.com/codesenju/kubectl-nuke-go/main/install.ps1" -UseBasicParsing).Content
+    ```
+    
+    ### Manual Installation
+    Download the appropriate binary for your platform from the assets below.
+    
+    **Full Changelog**: https://github.com/codesenju/kubectl-nuke-go/compare/{{.PreviousTag}}...{{.Tag}}
 
-# Homebrew Cask configuration
+# Homebrew Cask configuration (skip for prereleases)
 homebrew_casks:
   - name: kubectl-nuke
     repository:
@@ -60,6 +81,7 @@ homebrew_casks:
     homepage: "https://github.com/codesenju/kubectl-nuke-go"
     description: "kubectl plugin to forcefully delete Kubernetes resources"
     license: "MIT"
+    skip_upload: "{{ .Env.SKIP_HOMEBREW }}"
 
 # # Winget configuration
 # winget:

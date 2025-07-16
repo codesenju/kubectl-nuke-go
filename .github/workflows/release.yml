@@ -22,7 +22,33 @@ jobs:
         with:
           go-version: stable
 
-      - name: Run GoReleaser
+      - name: Check if prerelease
+        id: prerelease
+        run: |
+          if [[ "${{ github.ref_name }}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-(alpha|beta|rc|pre)\.[0-9]+$ ]]; then
+            echo "is_prerelease=true" >> $GITHUB_OUTPUT
+            echo "This is a prerelease: ${{ github.ref_name }}"
+          else
+            echo "is_prerelease=false" >> $GITHUB_OUTPUT
+            echo "This is a stable release: ${{ github.ref_name }}"
+          fi
+
+      - name: Run GoReleaser (Prerelease)
+        if: steps.prerelease.outputs.is_prerelease == 'true'
+        uses: goreleaser/goreleaser-action@v6
+        with:
+          distribution: goreleaser
+          version: '~> v2'
+          args: release --clean
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GORELEASER_CURRENT_TAG: ${{ github.ref_name }}
+          # Skip Homebrew and Winget for prereleases
+          SKIP_HOMEBREW: true
+          SKIP_WINGET: true
+
+      - name: Run GoReleaser (Stable Release)
+        if: steps.prerelease.outputs.is_prerelease == 'false'
         uses: goreleaser/goreleaser-action@v6
         with:
           distribution: goreleaser
@@ -32,3 +58,4 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           HOMEBREW_TAP_GITHUB_TOKEN: ${{ secrets.HOMEBREW_TAP_GITHUB_TOKEN }}
           WINGET_GITHUB_TOKEN: ${{ secrets.WINGET_GITHUB_TOKEN }}
+          GORELEASER_CURRENT_TAG: ${{ github.ref_name }}
