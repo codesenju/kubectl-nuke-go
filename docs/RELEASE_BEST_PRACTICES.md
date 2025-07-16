@@ -25,20 +25,23 @@ Follow the [Conventional Commits](https://www.conventionalcommits.org/) standard
 
 Create prereleases for testing new features before stable release:
 
-#### Supported Prerelease Formats:
+#### Supported Prerelease Formats
+
 - `v1.2.3-alpha.1` - Alpha releases (early development)
 - `v1.2.3-beta.1` - Beta releases (feature complete, testing)
 - `v1.2.3-rc.1` - Release candidates (stable, final testing)
 - `v1.2.3-pre.1` - General prereleases
 
-#### Creating a Prerelease:
+#### Creating a Prerelease
+
 ```bash
 # Create and push a prerelease tag
 git tag v1.2.3-beta.1
 git push origin v1.2.3-beta.1
 ```
 
-#### Prerelease Behavior:
+#### Prerelease Behavior
+
 - ✅ **Builds cross-platform binaries** (Linux, macOS, Windows)
 - ✅ **Creates GitHub prerelease** with assets
 - ✅ **Generates release notes** automatically
@@ -49,14 +52,16 @@ git push origin v1.2.3-beta.1
 
 Create stable releases for production use:
 
-#### Creating a Stable Release:
+#### Creating a Stable Release
+
 ```bash
 # Create and push a stable release tag
 git tag v1.2.3
 git push origin v1.2.3
 ```
 
-#### Stable Release Behavior:
+#### Stable Release Behavior
+
 - ✅ **Builds cross-platform binaries** (Linux, macOS, Windows)
 - ✅ **Creates GitHub release** with assets
 - ✅ **Updates Homebrew tap** (if configured)
