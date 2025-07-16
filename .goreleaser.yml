@@ -81,7 +81,7 @@ homebrew_casks:
     homepage: "https://github.com/codesenju/kubectl-nuke-go"
     description: "kubectl plugin to forcefully delete Kubernetes resources"
     license: "MIT"
-    skip_upload: "{{ .Env.SKIP_HOMEBREW }}"
+    skip_upload: "{{if .Env.SKIP_HOMEBREW}}{{.Env.SKIP_HOMEBREW}}{{else}}false{{end}}"
 
 # # Winget configuration
 # winget:
