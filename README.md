@@ -398,9 +398,28 @@ See [CHANGELOG.md](CHANGELOG.md) for release history and upgrade notes.
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 
-## Release Best Practices
+## Releases
 
-See [docs/RELEASE_BEST_PRACTICES.md](docs/RELEASE_BEST_PRACTICES.md) for how to write commit messages and how releases are automated.
+This project uses automated releases with both stable releases and prereleases:
+
+### Stable Releases
+- **Production-ready** versions (e.g., `v1.2.3`)
+- **Full distribution** via GitHub releases, Homebrew, and package managers
+- **Comprehensive testing** and documentation
+
+### Prereleases  
+- **Testing versions** for new features (e.g., `v1.2.3-beta.1`, `v1.2.3-rc.1`)
+- **GitHub releases only** (no package manager updates)
+- **Early access** to new functionality
+
+### Installation from Prereleases
+```bash
+# Download prerelease binaries from GitHub releases
+VERSION="v1.2.3-beta.1"  # Replace with desired prerelease version
+curl -LO https://github.com/codesenju/kubectl-nuke-go/releases/download/$VERSION/kubectl-nuke-go-linux-amd64.tar.gz
+```
+
+See [docs/RELEASE_BEST_PRACTICES.md](docs/RELEASE_BEST_PRACTICES.md) for detailed release workflow and commit message guidelines.
 
 ## License
 

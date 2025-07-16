@@ -3,12 +3,20 @@ package kube
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/discovery"
+	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/rest"
+	"k8s.io/client-go/tools/clientcmd"
 )
 
 // DeleteNamespace attempts to delete a namespace and returns true if deleted, false if stuck in terminating, or error.
@@ -152,6 +160,11 @@ func forceDeleteCommonResources(ctx context.Context, clientset kubernetes.Interf
 		}
 	}
 
+	// Delete custom resources that might be preventing namespace deletion
+	if err := forceDeleteCustomResources(ctx, clientset, name); err != nil {
+		fmt.Printf("⚠️  Warning: Failed to delete some custom resources: %v\n", err)
+	}
+
 	return nil
 }
 
@@ -250,6 +263,162 @@ func ForceDeletePods(ctx context.Context, clientset kubernetes.Interface, namesp
 
 	if len(errors) > 0 {
 		return fmt.Errorf("some pods failed to delete: %v", errors)
+	}
+
+	return nil
+}
+
+// forceDeleteCustomResources discovers and force deletes custom resources in a namespace
+// This is specifically designed to handle complex cases like SignOz with ClickHouse installations
+func forceDeleteCustomResources(ctx context.Context, clientset kubernetes.Interface, namespace string) error {
+	// We need to get the REST config to create discovery and dynamic clients
+	// Since we can't easily extract it from the clientset, we'll try different approaches
+	var config *rest.Config
+	var err error
+
+	// Try in-cluster config first
+	config, err = rest.InClusterConfig()
+	if err != nil {
+		// If not in cluster, try to build from default kubeconfig
+		config, err = clientcmd.BuildConfigFromFlags("", "")
+		if err != nil {
+			// Try with explicit kubeconfig path
+			homeDir := os.Getenv("HOME")
+			if homeDir == "" {
+				homeDir = os.Getenv("USERPROFILE") // Windows
+			}
+			if homeDir != "" {
+				kubeconfigPath := filepath.Join(homeDir, ".kube", "config")
+				config, err = clientcmd.BuildConfigFromFlags("", kubeconfigPath)
+			}
+			if err != nil {
+				// Skip custom resource deletion if we can't get config
+				fmt.Printf("⚠️  Could not get REST config for custom resource deletion, skipping...\n")
+				return nil
+			}
+		}
+	}
+
+	// Create discovery client to find all API resources
+	discoveryClient, err := discovery.NewDiscoveryClientForConfig(config)
+	if err != nil {
+		fmt.Printf("⚠️  Could not create discovery client: %v\n", err)
+		return nil
+	}
+
+	// Create dynamic client for custom resource operations
+	dynamicClient, err := dynamic.NewForConfig(config)
+	if err != nil {
+		fmt.Printf("⚠️  Could not create dynamic client: %v\n", err)
+		return nil
+	}
+
+	// Get all API resources
+	apiResourceLists, err := discoveryClient.ServerPreferredNamespacedResources()
+	if err != nil {
+		fmt.Printf("⚠️  Could not discover API resources: %v\n", err)
+		return nil
+	}
+
+	customResourcesFound := 0
+	customResourcesDeleted := 0
+
+	// Look for custom resources (non-core Kubernetes resources)
+	for _, apiResourceList := range apiResourceLists {
+		// Skip core Kubernetes APIs and common extensions
+		if strings.Contains(apiResourceList.GroupVersion, "/v1") ||
+			strings.Contains(apiResourceList.GroupVersion, "apps/") ||
+			strings.Contains(apiResourceList.GroupVersion, "extensions/") ||
+			strings.Contains(apiResourceList.GroupVersion, "networking.k8s.io/") ||
+			strings.Contains(apiResourceList.GroupVersion, "policy/") ||
+			strings.Contains(apiResourceList.GroupVersion, "rbac.authorization.k8s.io/") {
+			continue
+		}
+
+		gv, err := schema.ParseGroupVersion(apiResourceList.GroupVersion)
+		if err != nil {
+			continue
+		}
+
+		for _, apiResource := range apiResourceList.APIResources {
+			// Skip subresources
+			if strings.Contains(apiResource.Name, "/") {
+				continue
+			}
+
+			// Only process namespaced resources that support delete
+			if !apiResource.Namespaced {
+				continue
+			}
+
+			canDelete := false
+			for _, verb := range apiResource.Verbs {
+				if verb == "delete" {
+					canDelete = true
+					break
+				}
+			}
+			if !canDelete {
+				continue
+			}
+
+			// Create GVR (GroupVersionResource)
+			gvr := schema.GroupVersionResource{
+				Group:    gv.Group,
+				Version:  gv.Version,
+				Resource: apiResource.Name,
+			}
+
+			// List resources of this type in the namespace
+			resourceList, err := dynamicClient.Resource(gvr).Namespace(namespace).List(ctx, metav1.ListOptions{})
+			if err != nil {
+				// Skip resources we can't list (permissions, etc.)
+				continue
+			}
+
+			if len(resourceList.Items) > 0 {
+				customResourcesFound += len(resourceList.Items)
+				fmt.Printf("🔍 Found %d %s resources in namespace %s\n", len(resourceList.Items), apiResource.Name, namespace)
+
+				// Force delete each resource
+				gracePeriod := int64(0)
+				deleteOptions := metav1.DeleteOptions{
+					GracePeriodSeconds: &gracePeriod,
+				}
+
+				for _, resource := range resourceList.Items {
+					resourceName := resource.GetName()
+					fmt.Printf("💥 Force deleting %s: %s\n", apiResource.Name, resourceName)
+
+					// First, try to remove finalizers if they exist
+					if finalizers := resource.GetFinalizers(); len(finalizers) > 0 {
+						fmt.Printf("🔧 Removing finalizers from %s: %s\n", apiResource.Name, resourceName)
+						resource.SetFinalizers([]string{})
+						_, err := dynamicClient.Resource(gvr).Namespace(namespace).Update(ctx, &resource, metav1.UpdateOptions{})
+						if err != nil {
+							fmt.Printf("⚠️  Failed to remove finalizers from %s: %v\n", resourceName, err)
+						}
+					}
+
+					// Now force delete the resource
+					err := dynamicClient.Resource(gvr).Namespace(namespace).Delete(ctx, resourceName, deleteOptions)
+					if err != nil {
+						fmt.Printf("⚠️  Failed to delete %s %s: %v\n", apiResource.Name, resourceName, err)
+					} else {
+						customResourcesDeleted++
+						fmt.Printf("✅ Successfully deleted %s: %s\n", apiResource.Name, resourceName)
+					}
+				}
+			}
+		}
+	}
+
+	if customResourcesFound > 0 {
+		fmt.Printf("📊 Custom resources summary: %d found, %d deleted\n", customResourcesFound, customResourcesDeleted)
+		// Wait a bit for custom resources to be processed
+		time.Sleep(3 * time.Second)
+	} else {
+		fmt.Printf("ℹ️  No custom resources found in namespace %s\n", namespace)
 	}
 
 	return nil
