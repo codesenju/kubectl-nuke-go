@@ -51,18 +51,44 @@ func ForceRemoveFinalizers(ctx context.Context, clientset kubernetes.Interface, 
 }
 
 // NukeNamespace aggressively deletes a namespace by force-deleting all resources first
-func NukeNamespace(ctx context.Context, clientset kubernetes.Interface, name string) error {
+func NukeNamespace(ctx context.Context, clientset kubernetes.Interface, name string, bypassWebhooks bool, forceApiDirect bool) error {
 	fmt.Printf("💥 NUKE MODE: Aggressively deleting namespace %s and all its contents...\n", name)
+
+	// If bypass webhooks is enabled, check for problematic webhooks
+	if bypassWebhooks {
+		// First check for storage provider issues
+		if err := DetectStorageProviderIssues(ctx, clientset); err != nil {
+			fmt.Printf("⚠️  Warning: Failed to detect storage provider issues: %v\n", err)
+		}
+
+		// Then check for problematic webhooks
+		if err := DetectAndHandleWebhookIssues(ctx, clientset, true); err != nil {
+			fmt.Printf("⚠️  Warning: Failed to handle webhook issues: %v\n", err)
+		}
+
+		// Specifically target storage provider webhooks
+		if err := DisableStorageProviderWebhooks(ctx, clientset); err != nil {
+			fmt.Printf("⚠️  Warning: Failed to disable storage provider webhooks: %v\n", err)
+		}
+	}
 
 	// First, force delete all pods with grace period 0
 	if err := forceDeleteAllPods(ctx, clientset, name); err != nil {
 		fmt.Printf("⚠️  Warning: Failed to force delete pods: %v\n", err)
 	}
 
+	// Handle PVC finalizers specifically
+	if err := HandlePVCFinalizers(ctx, clientset, name, forceApiDirect); err != nil {
+		fmt.Printf("⚠️  Warning: Failed to handle PVC finalizers: %v\n", err)
+	}
+
 	// Force delete other common resources
 	if err := forceDeleteCommonResources(ctx, clientset, name); err != nil {
 		fmt.Printf("⚠️  Warning: Failed to delete some resources: %v\n", err)
 	}
+
+	// Run diagnostics on the namespace
+	DiagnoseStuckNamespace(ctx, clientset, name)
 
 	// Now try to delete the namespace
 	deleted, terminating, err := DeleteNamespace(ctx, clientset, name)
