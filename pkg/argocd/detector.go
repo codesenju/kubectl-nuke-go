@@ -34,22 +34,22 @@ const (
 	ArgoCDTimeout = 60 * time.Second
 )
 
-// ArgoCDDetector handles detection and management of ArgoCD resources
-type ArgoCDDetector struct {
+// Detector handles detection and management of ArgoCD resources
+type Detector struct {
 	kubeClient    kubernetes.Interface
 	dynamicClient dynamic.Interface
 }
 
-// NewArgoCDDetector creates a new ArgoCD detector
-func NewArgoCDDetector(kubeClient kubernetes.Interface, dynamicClient dynamic.Interface) *ArgoCDDetector {
-	return &ArgoCDDetector{
+// NewDetector creates a new ArgoCD detector
+func NewDetector(kubeClient kubernetes.Interface, dynamicClient dynamic.Interface) *Detector {
+	return &Detector{
 		kubeClient:    kubeClient,
 		dynamicClient: dynamicClient,
 	}
 }
 
 // DetectArgoCDAppsForNamespace finds all ArgoCD Applications that manage resources in the given namespace
-func (d *ArgoCDDetector) DetectArgoCDAppsForNamespace(ctx context.Context, namespace string) ([]unstructured.Unstructured, error) {
+func (d *Detector) DetectArgoCDAppsForNamespace(ctx context.Context, namespace string) ([]unstructured.Unstructured, error) {
 	// Get ArgoCD Application GVR
 	appGVR := schema.GroupVersionResource{
 		Group:    ArgoCDGroup,
@@ -86,7 +86,7 @@ func (d *ArgoCDDetector) DetectArgoCDAppsForNamespace(ctx context.Context, names
 }
 
 // IsArgoCDManagedResource checks if a resource is managed by ArgoCD
-func (d *ArgoCDDetector) IsArgoCDManagedResource(resource *unstructured.Unstructured) bool {
+func (d *Detector) IsArgoCDManagedResource(resource *unstructured.Unstructured) bool {
 	// Check for ArgoCD labels
 	labels := resource.GetLabels()
 	if labels != nil {

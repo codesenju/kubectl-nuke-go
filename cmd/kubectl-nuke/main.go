@@ -9,7 +9,6 @@ import (
 
 	"github.com/spf13/cobra"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/clientcmd"
 
@@ -197,19 +196,9 @@ func deleteNamespace(cmd *cobra.Command, args []string) {
 		fmt.Printf("📋 Namespace %s is in '%s' state.\n", ns.Name, ns.Status.Phase)
 	}
 
-	// Get REST config for dynamic client operations
-	config, err := clientcmd.BuildConfigFromFlags("", kubeconfig)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "❌ Failed to build REST config: %v\n", err)
-		os.Exit(1)
-	}
-
-	// Create dynamic client for ArgoCD operations
-	dynamicClient, err := dynamic.NewForConfig(config)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "❌ Failed to create dynamic client: %v\n", err)
-		os.Exit(1)
-	}
+	// Note: bypassWebhooks and forceAPIDirect are available for future use
+	_ = bypassWebhooks
+	_ = forceAPIDirect
 
 	// Use enhanced namespace deletion with ArgoCD support
 	err = kube.EnhancedDeleteNamespace(ctx, clientset, namespace, forceDelete, diagnoseOnly)

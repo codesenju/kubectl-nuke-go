@@ -7,7 +7,7 @@ import (
 )
 
 func TestIsArgoCDManagedResource(t *testing.T) {
-	detector := &ArgoCDDetector{}
+	detector := &Detector{}
 
 	tests := []struct {
 		name     string

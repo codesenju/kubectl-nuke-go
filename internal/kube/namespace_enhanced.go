@@ -29,8 +29,8 @@ func EnhancedDeleteNamespace(ctx context.Context, clientset kubernetes.Interface
 	}
 
 	// Create ArgoCD detector and handler
-	detector := argocd.NewArgoCDDetector(clientset, dynamicClient)
-	handler := argocd.NewArgoCDHandler(dynamicClient)
+	detector := argocd.NewDetector(clientset, dynamicClient)
+	handler := argocd.NewHandler(dynamicClient)
 
 	// Phase 1: Detect ArgoCD applications managing this namespace
 	fmt.Printf("🔍 Checking for ArgoCD applications managing namespace: %s\n", namespace)
@@ -70,13 +70,12 @@ func EnhancedDeleteNamespace(ctx context.Context, clientset kubernetes.Interface
 	// Phase 4: Proceed with namespace deletion based on mode
 	if forceDelete {
 		return EnhancedNukeNamespace(ctx, clientset, dynamicClient, namespace, detector)
-	} else {
-		return EnhancedStandardDelete(ctx, clientset, namespace)
 	}
+	return EnhancedStandardDelete(ctx, clientset, namespace)
 }
 
 // EnhancedNukeNamespace performs aggressive namespace deletion with ArgoCD awareness
-func EnhancedNukeNamespace(ctx context.Context, clientset kubernetes.Interface, dynamicClient dynamic.Interface, namespace string, detector *argocd.ArgoCDDetector) error {
+func EnhancedNukeNamespace(ctx context.Context, clientset kubernetes.Interface, dynamicClient dynamic.Interface, namespace string, detector *argocd.Detector) error {
 	fmt.Printf("💥 ENHANCED NUKE MODE: ArgoCD-aware aggressive deletion of namespace: %s\n", namespace)
 
 	// Phase 1: Remove any remaining ArgoCD-managed resources with finalizers
@@ -117,7 +116,7 @@ func EnhancedStandardDelete(ctx context.Context, clientset kubernetes.Interface,
 }
 
 // removeArgoCDManagedResourceFinalizers removes finalizers from ArgoCD-managed resources
-func removeArgoCDManagedResourceFinalizers(ctx context.Context, clientset kubernetes.Interface, dynamicClient dynamic.Interface, namespace string, detector *argocd.ArgoCDDetector) error {
+func removeArgoCDManagedResourceFinalizers(ctx context.Context, clientset kubernetes.Interface, dynamicClient dynamic.Interface, namespace string, detector *argocd.Detector) error {
 	fmt.Printf("🔧 Removing finalizers from ArgoCD-managed resources...\n")
 
 	// Get all resources in the namespace and check if they're ArgoCD-managed

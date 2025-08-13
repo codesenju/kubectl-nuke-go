@@ -19,7 +19,7 @@ import (
 	"k8s.io/client-go/tools/clientcmd"
 )
 
-// StorageProviderHandler handles specific storage provider resources
+// HandleStorageProviderResources handles specific storage provider resources
 func HandleStorageProviderResources(ctx context.Context, clientset kubernetes.Interface, namespace string, config *rest.Config) error {
 	fmt.Printf("🔍 Checking for storage provider resources in namespace %s...\n", namespace)
 

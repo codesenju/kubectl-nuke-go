@@ -14,20 +14,20 @@ import (
 	"k8s.io/client-go/dynamic"
 )
 
-// ArgoCDHandler handles ArgoCD application deletion and cleanup
-type ArgoCDHandler struct {
+// Handler handles ArgoCD application deletion and cleanup
+type Handler struct {
 	dynamicClient dynamic.Interface
 }
 
-// NewArgoCDHandler creates a new ArgoCD handler
-func NewArgoCDHandler(dynamicClient dynamic.Interface) *ArgoCDHandler {
-	return &ArgoCDHandler{
+// NewHandler creates a new ArgoCD handler
+func NewHandler(dynamicClient dynamic.Interface) *Handler {
+	return &Handler{
 		dynamicClient: dynamicClient,
 	}
 }
 
 // DeleteApplication deletes an ArgoCD application and waits for it to be deleted
-func (h *ArgoCDHandler) DeleteApplication(ctx context.Context, app unstructured.Unstructured) error {
+func (h *Handler) DeleteApplication(ctx context.Context, app unstructured.Unstructured) error {
 	appGVR := schema.GroupVersionResource{
 		Group:    ArgoCDGroup,
 		Version:  ArgoCDVersion,
@@ -67,7 +67,7 @@ func (h *ArgoCDHandler) DeleteApplication(ctx context.Context, app unstructured.
 }
 
 // RemoveApplicationFinalizers removes finalizers from an ArgoCD application
-func (h *ArgoCDHandler) RemoveApplicationFinalizers(ctx context.Context, app unstructured.Unstructured) error {
+func (h *Handler) RemoveApplicationFinalizers(ctx context.Context, app unstructured.Unstructured) error {
 	appGVR := schema.GroupVersionResource{
 		Group:    ArgoCDGroup,
 		Version:  ArgoCDVersion,
@@ -110,7 +110,7 @@ func (h *ArgoCDHandler) RemoveApplicationFinalizers(ctx context.Context, app uns
 }
 
 // DeleteApplications deletes multiple ArgoCD applications
-func (h *ArgoCDHandler) DeleteApplications(ctx context.Context, apps []unstructured.Unstructured) error {
+func (h *Handler) DeleteApplications(ctx context.Context, apps []unstructured.Unstructured) error {
 	for _, app := range apps {
 		appName := app.GetName()
 		appNamespace := app.GetNamespace()
