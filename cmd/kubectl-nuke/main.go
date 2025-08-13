@@ -13,6 +13,7 @@ import (
 	"k8s.io/client-go/tools/clientcmd"
 
 	"github.com/codesenju/kubectl-nuke-go/internal/kube"
+	"github.com/codesenju/kubectl-nuke-go/internal/updater"
 )
 
 var (
@@ -68,6 +69,34 @@ Features:
 			fmt.Printf("kubectl-nuke version %s\n", version)
 		},
 	}
+
+	// Create update command
+	var forceUpdate bool
+	var checkOnly bool
+	var updateCmd = &cobra.Command{
+		Use:   "update",
+		Short: "Check for updates and upgrade kubectl-nuke to the latest version",
+		Long: `Check for the latest version of kubectl-nuke on GitHub releases and perform an in-place upgrade.
+
+This command will:
+1. Check the latest release on GitHub
+2. Compare with the current version
+3. Download and install the new version if available
+4. Create a backup of the current binary before updating
+
+The update process is safe and will restore the original binary if the update fails.`,
+		Example: `  # Check for updates without installing
+  kubectl-nuke update --check-only
+  
+  # Update to the latest version
+  kubectl-nuke update
+  
+  # Force update even if versions are the same
+  kubectl-nuke update --force`,
+		Run: performUpdate,
+	}
+	updateCmd.Flags().BoolVar(&forceUpdate, "force", false, "Force update even if current version is up to date")
+	updateCmd.Flags().BoolVar(&checkOnly, "check-only", false, "Only check for updates without installing")
 
 	// Create namespace command
 	var forceDelete bool
@@ -145,6 +174,7 @@ if the application doesn't handle sudden termination properly.`,
 	podCmd.Flags().StringP("namespace", "n", "default", "namespace to delete pods from")
 
 	rootCmd.AddCommand(versionCmd)
+	rootCmd.AddCommand(updateCmd)
 	rootCmd.AddCommand(nsCmd)
 	rootCmd.AddCommand(podCmd)
 
@@ -276,6 +306,52 @@ func nukePods(cmd *cobra.Command, args []string) {
 	}
 
 	fmt.Printf("✅ Force delete operation completed!\n")
+}
+
+func performUpdate(cmd *cobra.Command, args []string) {
+	forceUpdate, _ := cmd.Flags().GetBool("force")
+	checkOnly, _ := cmd.Flags().GetBool("check-only")
+
+	fmt.Printf("🔄 kubectl-nuke updater\n")
+	fmt.Printf("📋 Current version: %s\n", version)
+
+	checker := updater.NewUpdateChecker(version)
+	
+	// Check for updates
+	release, hasUpdate, err := checker.CheckForUpdate()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "❌ Failed to check for updates: %v\n", err)
+		os.Exit(1)
+	}
+
+	if !hasUpdate && !forceUpdate {
+		fmt.Printf("✅ You're already running the latest version (%s)\n", version)
+		return
+	}
+
+	if hasUpdate {
+		fmt.Printf("🆕 New version available: %s\n", release.TagName)
+		fmt.Printf("📝 Release notes:\n%s\n", release.Body)
+	} else if forceUpdate {
+		fmt.Printf("🔄 Force update requested for version: %s\n", release.TagName)
+	}
+
+	if checkOnly {
+		if hasUpdate {
+			fmt.Printf("💡 Run 'kubectl-nuke update' to install the latest version\n")
+		}
+		return
+	}
+
+	// Perform the update
+	fmt.Printf("🚀 Starting update process...\n")
+	if err := checker.PerformUpdate(release, forceUpdate); err != nil {
+		fmt.Fprintf(os.Stderr, "❌ Update failed: %v\n", err)
+		os.Exit(1)
+	}
+
+	fmt.Printf("🎉 Update completed successfully!\n")
+	fmt.Printf("💡 You can now use the updated version of kubectl-nuke\n")
 }
 
 func homeDir() string {
