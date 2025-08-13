@@ -1,6 +1,8 @@
 package updater
 
 import (
+	"runtime"
+	"strings"
 	"testing"
 )
 
@@ -50,15 +52,26 @@ func TestIsNewerVersion(t *testing.T) {
 
 func TestGetAssetName(t *testing.T) {
 	checker := NewUpdateChecker("v1.0.0")
-	assetName := checker.getAssetName()
+	assetName := checker.GetAssetName()
 	
 	// The asset name should contain the platform info
 	if assetName == "" {
 		t.Error("Asset name should not be empty")
 	}
 	
-	// Should contain kubectl-nuke
-	if len(assetName) < 10 {
-		t.Errorf("Asset name seems too short: %s", assetName)
+	// Should contain kubectl-nuke-go and proper extension
+	if !strings.Contains(assetName, "kubectl-nuke-go") {
+		t.Errorf("Asset name should contain 'kubectl-nuke-go': %s", assetName)
+	}
+	
+	// Should have proper extension based on platform
+	if runtime.GOOS == "windows" {
+		if !strings.HasSuffix(assetName, ".zip") {
+			t.Errorf("Windows asset should end with .zip: %s", assetName)
+		}
+	} else {
+		if !strings.HasSuffix(assetName, ".tar.gz") {
+			t.Errorf("Unix asset should end with .tar.gz: %s", assetName)
+		}
 	}
 }

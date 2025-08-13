@@ -1,6 +1,9 @@
 package updater
 
 import (
+	"archive/tar"
+	"archive/zip"
+	"compress/gzip"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -108,7 +111,7 @@ func (u *UpdateChecker) isNewerVersion(latestTag string) (bool, error) {
 // PerformUpdate downloads and installs the latest version
 func (u *UpdateChecker) PerformUpdate(release *Release, force bool) error {
 	// Find the appropriate asset for current platform
-	assetName := u.getAssetName()
+	assetName := u.GetAssetName()
 	var downloadURL string
 	
 	for _, asset := range release.Assets {
@@ -130,26 +133,35 @@ func (u *UpdateChecker) PerformUpdate(release *Release, force bool) error {
 		return fmt.Errorf("failed to get current executable path: %w", err)
 	}
 
-	// Create temporary file for download
-	tmpDir := os.TempDir()
-	tmpFile := filepath.Join(tmpDir, "kubectl-nuke-new")
+	// Create temporary directory for download and extraction
+	tmpDir, err := os.MkdirTemp("", "kubectl-nuke-update-*")
+	if err != nil {
+		return fmt.Errorf("failed to create temp directory: %w", err)
+	}
+	defer os.RemoveAll(tmpDir)
 	
-	// Download the new binary
-	if err := u.downloadFile(downloadURL, tmpFile); err != nil {
+	// Download the archive
+	archivePath := filepath.Join(tmpDir, assetName)
+	if err := u.downloadFile(downloadURL, archivePath); err != nil {
 		return fmt.Errorf("failed to download update: %w", err)
 	}
 
+	// Extract the binary from the archive
+	binaryPath, err := u.extractBinary(archivePath, tmpDir)
+	if err != nil {
+		return fmt.Errorf("failed to extract binary: %w", err)
+	}
+
 	// Make it executable
-	if err := os.Chmod(tmpFile, 0755); err != nil {
+	if err := os.Chmod(binaryPath, 0755); err != nil {
 		return fmt.Errorf("failed to make binary executable: %w", err)
 	}
 
 	// Test the new binary
 	if !force {
 		fmt.Printf("🧪 Testing new binary...\n")
-		cmd := exec.Command(tmpFile, "version")
+		cmd := exec.Command(binaryPath, "version")
 		if err := cmd.Run(); err != nil {
-			os.Remove(tmpFile)
 			return fmt.Errorf("new binary failed validation: %w", err)
 		}
 	}
@@ -160,21 +172,18 @@ func (u *UpdateChecker) PerformUpdate(release *Release, force bool) error {
 	// Create backup
 	backupPath := currentExe + ".backup"
 	if err := copyFile(currentExe, backupPath); err != nil {
-		os.Remove(tmpFile)
 		return fmt.Errorf("failed to create backup: %w", err)
 	}
 
 	// Replace the binary
-	if err := copyFile(tmpFile, currentExe); err != nil {
+	if err := copyFile(binaryPath, currentExe); err != nil {
 		// Restore backup on failure
 		copyFile(backupPath, currentExe)
-		os.Remove(tmpFile)
 		os.Remove(backupPath)
 		return fmt.Errorf("failed to replace binary: %w", err)
 	}
 
 	// Cleanup
-	os.Remove(tmpFile)
 	os.Remove(backupPath)
 
 	fmt.Printf("✅ Successfully updated to version %s!\n", release.TagName)
@@ -183,29 +192,22 @@ func (u *UpdateChecker) PerformUpdate(release *Release, force bool) error {
 	return nil
 }
 
-// getAssetName returns the expected asset name for the current platform
-func (u *UpdateChecker) getAssetName() string {
+// GetAssetName returns the expected asset name for the current platform
+func (u *UpdateChecker) GetAssetName() string {
 	goos := runtime.GOOS
 	goarch := runtime.GOARCH
 	
-	// Map Go arch names to common naming conventions
-	switch goarch {
-	case "amd64":
-		goarch = "x86_64"
-	case "arm64":
-		goarch = "arm64"
-	}
+	// Keep original Go arch names (don't map to x86_64)
+	// The actual release assets use amd64, not x86_64
 	
-	// Common binary naming patterns
+	// Match the actual release asset naming pattern
 	switch goos {
-	case "darwin":
-		return fmt.Sprintf("kubectl-nuke-darwin-%s", goarch)
-	case "linux":
-		return fmt.Sprintf("kubectl-nuke-linux-%s", goarch)
+	case "darwin", "linux":
+		return fmt.Sprintf("kubectl-nuke-go-%s-%s.tar.gz", goos, goarch)
 	case "windows":
-		return fmt.Sprintf("kubectl-nuke-windows-%s.exe", goarch)
+		return fmt.Sprintf("kubectl-nuke-go-%s-%s.zip", goos, goarch)
 	default:
-		return fmt.Sprintf("kubectl-nuke-%s-%s", goos, goarch)
+		return fmt.Sprintf("kubectl-nuke-go-%s-%s.tar.gz", goos, goarch)
 	}
 }
 
@@ -258,4 +260,102 @@ func copyFile(src, dst string) error {
 	}
 	
 	return os.Chmod(dst, sourceInfo.Mode())
+}
+
+// extractBinary extracts the kubectl-nuke binary from a tar.gz or zip archive
+func (u *UpdateChecker) extractBinary(archivePath, extractDir string) (string, error) {
+	if strings.HasSuffix(archivePath, ".tar.gz") {
+		return u.extractFromTarGz(archivePath, extractDir)
+	} else if strings.HasSuffix(archivePath, ".zip") {
+		return u.extractFromZip(archivePath, extractDir)
+	}
+	return "", fmt.Errorf("unsupported archive format: %s", archivePath)
+}
+
+// extractFromTarGz extracts the binary from a tar.gz archive
+func (u *UpdateChecker) extractFromTarGz(archivePath, extractDir string) (string, error) {
+	file, err := os.Open(archivePath)
+	if err != nil {
+		return "", err
+	}
+	defer file.Close()
+
+	gzr, err := gzip.NewReader(file)
+	if err != nil {
+		return "", err
+	}
+	defer gzr.Close()
+
+	tr := tar.NewReader(gzr)
+
+	for {
+		header, err := tr.Next()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return "", err
+		}
+
+		// Look for the kubectl-nuke binary (without extension)
+		if header.Typeflag == tar.TypeReg && (header.Name == "kubectl-nuke" || strings.HasSuffix(header.Name, "/kubectl-nuke")) {
+			binaryPath := filepath.Join(extractDir, "kubectl-nuke")
+			outFile, err := os.Create(binaryPath)
+			if err != nil {
+				return "", err
+			}
+			defer outFile.Close()
+
+			_, err = io.Copy(outFile, tr)
+			if err != nil {
+				return "", err
+			}
+
+			return binaryPath, nil
+		}
+	}
+
+	return "", fmt.Errorf("kubectl-nuke binary not found in archive")
+}
+
+// extractFromZip extracts the binary from a zip archive
+func (u *UpdateChecker) extractFromZip(archivePath, extractDir string) (string, error) {
+	r, err := zip.OpenReader(archivePath)
+	if err != nil {
+		return "", err
+	}
+	defer r.Close()
+
+	for _, f := range r.File {
+		// Look for the kubectl-nuke binary (with or without .exe extension)
+		if f.Name == "kubectl-nuke" || f.Name == "kubectl-nuke.exe" || strings.HasSuffix(f.Name, "/kubectl-nuke") || strings.HasSuffix(f.Name, "/kubectl-nuke.exe") {
+			rc, err := f.Open()
+			if err != nil {
+				return "", err
+			}
+			defer rc.Close()
+
+			// Determine output filename (keep .exe for Windows)
+			outputName := "kubectl-nuke"
+			if runtime.GOOS == "windows" {
+				outputName = "kubectl-nuke.exe"
+			}
+			
+			binaryPath := filepath.Join(extractDir, outputName)
+			outFile, err := os.Create(binaryPath)
+			if err != nil {
+				return "", err
+			}
+			defer outFile.Close()
+
+			_, err = io.Copy(outFile, rc)
+			if err != nil {
+				return "", err
+			}
+
+			return binaryPath, nil
+		}
+	}
+
+	return "", fmt.Errorf("kubectl-nuke binary not found in archive")
 }
