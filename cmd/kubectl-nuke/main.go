@@ -73,7 +73,7 @@ Features:
 	// Create namespace command
 	var forceDelete bool
 	var bypassWebhooks bool
-	var forceApiDirect bool
+	var forceAPIDirect bool
 	var diagnoseOnly bool
 	var nsCmd = &cobra.Command{
 		Use:     "ns <namespace>",
@@ -115,7 +115,7 @@ With --diagnose-only flag, it will only diagnose issues without attempting delet
 	}
 	nsCmd.Flags().BoolVarP(&forceDelete, "force", "f", false, "Aggressively delete all resources in the namespace first (DESTRUCTIVE)")
 	nsCmd.Flags().BoolVar(&bypassWebhooks, "bypass-webhooks", false, "Temporarily disable webhooks that might block deletion")
-	nsCmd.Flags().BoolVar(&forceApiDirect, "force-api-direct", false, "Use direct API server calls to bypass admission controllers (requires kubectl)")
+	nsCmd.Flags().BoolVar(&forceAPIDirect, "force-api-direct", false, "Use direct API server calls to bypass admission controllers (requires kubectl)")
 	nsCmd.Flags().BoolVar(&diagnoseOnly, "diagnose-only", false, "Only diagnose issues without attempting deletion")
 
 	// Create pod command for force deleting pods
@@ -162,7 +162,7 @@ func deleteNamespace(cmd *cobra.Command, args []string) {
 	// Get flag values
 	forceDelete, _ := cmd.Flags().GetBool("force")
 	bypassWebhooks, _ := cmd.Flags().GetBool("bypass-webhooks")
-	forceApiDirect, _ := cmd.Flags().GetBool("force-api-direct")
+	forceAPIDirect, _ := cmd.Flags().GetBool("force-api-direct")
 	diagnoseOnly, _ := cmd.Flags().GetBool("diagnose-only")
 
 	if forceDelete {

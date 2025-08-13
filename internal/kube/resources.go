@@ -48,7 +48,7 @@ func ForceRemoveFinalizers(ctx context.Context, clientset kubernetes.Interface, 
 }
 
 // NukeNamespace aggressively deletes a namespace by force-deleting all resources first
-func NukeNamespace(ctx context.Context, clientset kubernetes.Interface, name string, bypassWebhooks bool, forceApiDirect bool) error {
+func NukeNamespace(ctx context.Context, clientset kubernetes.Interface, name string, bypassWebhooks bool, forceAPIDirect bool) error {
 	fmt.Printf("💥 NUKE MODE: Aggressively deleting namespace %s and all its contents...\n", name)
 
 	// Get REST config for dynamic client operations
@@ -89,7 +89,7 @@ func NukeNamespace(ctx context.Context, clientset kubernetes.Interface, name str
 	}
 
 	// Handle PVC finalizers specifically
-	if err := HandlePVCFinalizers(ctx, clientset, name, forceApiDirect); err != nil {
+	if err := HandlePVCFinalizers(ctx, clientset, name, forceAPIDirect); err != nil {
 		fmt.Printf("⚠️  Warning: Failed to handle PVC finalizers: %v\n", err)
 	}
 

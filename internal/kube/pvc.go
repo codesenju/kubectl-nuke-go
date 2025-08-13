@@ -14,7 +14,7 @@ import (
 )
 
 // HandlePVCFinalizers handles PVC finalizers in a namespace that might be blocking deletion
-func HandlePVCFinalizers(ctx context.Context, clientset kubernetes.Interface, namespace string, forceApiDirect bool) error {
+func HandlePVCFinalizers(ctx context.Context, clientset kubernetes.Interface, namespace string, forceAPIDirect bool) error {
 	pvcs, err := clientset.CoreV1().PersistentVolumeClaims(namespace).List(ctx, metav1.ListOptions{})
 	if err != nil {
 		return fmt.Errorf("failed to list PVCs: %w", err)
@@ -77,8 +77,8 @@ func HandlePVCFinalizers(ctx context.Context, clientset kubernetes.Interface, na
 				}
 			}
 
-			// 4. If all methods fail and forceApiDirect is enabled, try direct API approach
-			if !success && forceApiDirect {
+			// 4. If all methods fail and forceAPIDirect is enabled, try direct API approach
+			if !success && forceAPIDirect {
 				err = forceRemovePVCFinalizersViaAPI(namespace, pvc.Name)
 				if err == nil {
 					fmt.Printf("✅ Successfully removed finalizers via direct API: %s\n", pvc.Name)
