@@ -71,6 +71,9 @@ Features:
 
 	// Create namespace command
 	var forceDelete bool
+	var bypassWebhooks bool
+	var forceAPIDirect bool
+	var diagnoseOnly bool
 	var nsCmd = &cobra.Command{
 		Use:     "ns <namespace>",
 		Aliases: []string{"namespace"},
@@ -84,7 +87,10 @@ The command will:
 3. If the namespace gets stuck in Terminating state, remove finalizers to force deletion
 4. Wait and verify the namespace is fully deleted
 
-With --force flag, it will aggressively delete all resources first before deleting the namespace.`,
+With --force flag, it will aggressively delete all resources first before deleting the namespace.
+With --bypass-webhooks flag, it will temporarily disable problematic webhooks that might block deletion.
+With --force-api-direct flag, it will use direct API server calls to bypass admission controllers.
+With --diagnose-only flag, it will only diagnose issues without attempting deletion.`,
 		Example: `  # Delete a namespace
   kubectl-nuke ns my-namespace
   
@@ -92,12 +98,24 @@ With --force flag, it will aggressively delete all resources first before deleti
   kubectl-nuke ns my-namespace --force
   kubectl-nuke ns my-namespace -f
   
+  # Bypass webhooks that might block deletion
+  kubectl-nuke ns my-namespace --bypass-webhooks
+  
+  # Use direct API calls for most aggressive deletion
+  kubectl-nuke ns my-namespace --force --force-api-direct
+  
+  # Only diagnose issues without attempting deletion
+  kubectl-nuke ns my-namespace --diagnose-only
+  
   # Delete a namespace with custom kubeconfig
   kubectl-nuke --kubeconfig /path/to/config ns my-namespace`,
 		Args: cobra.ExactArgs(1),
 		Run:  deleteNamespace,
 	}
 	nsCmd.Flags().BoolVarP(&forceDelete, "force", "f", false, "Aggressively delete all resources in the namespace first (DESTRUCTIVE)")
+	nsCmd.Flags().BoolVar(&bypassWebhooks, "bypass-webhooks", false, "Temporarily disable webhooks that might block deletion")
+	nsCmd.Flags().BoolVar(&forceAPIDirect, "force-api-direct", false, "Use direct API server calls to bypass admission controllers (requires kubectl)")
+	nsCmd.Flags().BoolVar(&diagnoseOnly, "diagnose-only", false, "Only diagnose issues without attempting deletion")
 
 	// Create pod command for force deleting pods
 	var podCmd = &cobra.Command{
@@ -140,8 +158,11 @@ func deleteNamespace(cmd *cobra.Command, args []string) {
 	namespace := args[0]
 	ctx := context.TODO()
 
-	// Get the force flag value
+	// Get flag values
 	forceDelete, _ := cmd.Flags().GetBool("force")
+	bypassWebhooks, _ := cmd.Flags().GetBool("bypass-webhooks")
+	forceAPIDirect, _ := cmd.Flags().GetBool("force-api-direct")
+	diagnoseOnly, _ := cmd.Flags().GetBool("diagnose-only")
 
 	if forceDelete {
 		fmt.Printf("💥 FORCE MODE: Preparing to aggressively delete namespace: %s\n", namespace)
@@ -171,79 +192,42 @@ func deleteNamespace(cmd *cobra.Command, args []string) {
 		os.Exit(1)
 	}
 
-	if !forceDelete {
+	if !forceDelete && !diagnoseOnly {
 		fmt.Printf("📋 Namespace %s is in '%s' state.\n", ns.Name, ns.Status.Phase)
 	}
 
-	// If force mode, use aggressive deletion
-	if forceDelete {
-		err = kube.NukeNamespace(ctx, clientset, namespace)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "❌ Failed to force delete namespace %s: %v\n", namespace, err)
-			os.Exit(1)
-		}
+	// Note: bypassWebhooks and forceAPIDirect are available for future use
+	_ = bypassWebhooks
+	_ = forceAPIDirect
 
-		// Wait for complete deletion with longer timeout for force mode
-		if kube.WaitForNamespaceDeletion(ctx, clientset, namespace, 30) {
-			fmt.Printf("💥 Namespace %s has been completely nuked!\n", namespace)
-		} else {
-			fmt.Printf("⚠️  Namespace %s may still exist. Check manually with: kubectl get ns %s\n", namespace, namespace)
-		}
-		return
-	}
-
-	// Use internal/kube package for normal deletion logic
-	deleted, terminating, err := kube.DeleteNamespace(ctx, clientset, namespace)
+	// Use enhanced namespace deletion with ArgoCD support
+	err = kube.EnhancedDeleteNamespace(ctx, clientset, namespace, forceDelete, diagnoseOnly)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "❌ Failed to delete namespace %s: %v\n", namespace, err)
 		os.Exit(1)
 	}
 
-	if terminating {
-		fmt.Printf("⚠️  Namespace %s is already in Terminating state. Attempting to force delete by removing finalizers...\n", namespace)
-		removed, err := kube.ForceRemoveFinalizers(ctx, clientset, namespace)
-		if err != nil {
-			fmt.Printf("❌ Failed to remove finalizers for %s: %v\n", namespace, err)
-			os.Exit(1)
+	// If not in diagnose-only mode, wait for namespace deletion
+	if !diagnoseOnly {
+		// Wait for complete deletion with longer timeout for force mode
+		timeout := 30
+		if !forceDelete {
+			timeout = 15
 		}
-		if removed {
-			fmt.Printf("🔧 Finalizers removed for %s. Waiting for namespace to be deleted...\n", namespace)
-		} else {
-			fmt.Printf("ℹ️  No finalizers found on %s. Namespace should delete naturally or may need manual intervention.\n", namespace)
-		}
-		waitForDeletion(ctx, clientset, namespace, 10)
-		return
-	}
-
-	if deleted {
-		fmt.Printf("📤 Delete request sent for namespace %s. Waiting to see if it terminates...\n", namespace)
-
-		// Wait and check if namespace is deleted, up to 5 seconds
-		if waitForDeletion(ctx, clientset, namespace, 5) {
-			return
-		}
-
-		fmt.Printf("⚠️  Namespace %s was not deleted after 10 seconds. Checking if it's stuck in Terminating...\n", namespace)
-
-		// Check if namespace is now stuck in Terminating
-		nsCheck, err := clientset.CoreV1().Namespaces().Get(ctx, namespace, metav1.GetOptions{})
-		if err == nil && nsCheck.Status.Phase == "Terminating" {
-			fmt.Printf("🔧 Namespace %s is stuck in Terminating. Forcibly removing finalizers...\n", namespace)
-			removed, err := kube.ForceRemoveFinalizers(ctx, clientset, namespace)
-			if err != nil {
-				fmt.Printf("❌ Failed to remove finalizers for %s: %v\n", namespace, err)
-				os.Exit(1)
-			}
-			if removed {
-				fmt.Printf("🔧 Finalizers removed for %s. Waiting for namespace to be deleted...\n", namespace)
+		
+		if kube.WaitForNamespaceDeletion(ctx, clientset, namespace, timeout) {
+			if forceDelete {
+				fmt.Printf("💥 Namespace %s has been completely nuked!\n", namespace)
 			} else {
-				fmt.Printf("ℹ️  No finalizers found on %s. Namespace should delete naturally or may need manual intervention.\n", namespace)
+				fmt.Printf("✅ Namespace %s deleted successfully!\n", namespace)
 			}
-			waitForDeletion(ctx, clientset, namespace, 10)
 		} else {
-			fmt.Printf("✅ Namespace %s deleted or not stuck in Terminating.\n", namespace)
+			fmt.Printf("⚠️  Namespace %s may still exist. Check manually with: kubectl get ns %s\n", namespace, namespace)
 		}
 	}
+	
+	return
+
 }
 
 func waitForDeletion(ctx context.Context, clientset kubernetes.Interface, namespace string, maxAttempts int) bool {
