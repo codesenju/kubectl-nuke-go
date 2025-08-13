@@ -1,10 +1,12 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -81,21 +83,23 @@ Features:
 This command will:
 1. Check the latest release on GitHub
 2. Compare with the current version
-3. Download and install the new version if available
-4. Create a backup of the current binary before updating
+3. Prompt for user confirmation (unless --force is used)
+4. Download and install the new version if confirmed
+5. Create a backup of the current binary before updating
 
-The update process is safe and will restore the original binary if the update fails.`,
+The update process is safe and will restore the original binary if the update fails.
+Use --force to skip the confirmation prompt and update automatically.`,
 		Example: `  # Check for updates without installing
   kubectl-nuke update --check-only
   
-  # Update to the latest version
+  # Update to the latest version (with confirmation prompt)
   kubectl-nuke update
   
-  # Force update even if versions are the same
+  # Force update without confirmation prompt
   kubectl-nuke update --force`,
 		Run: performUpdate,
 	}
-	updateCmd.Flags().BoolVar(&forceUpdate, "force", false, "Force update even if current version is up to date")
+	updateCmd.Flags().BoolVar(&forceUpdate, "force", false, "Force update without confirmation prompt")
 	updateCmd.Flags().BoolVar(&checkOnly, "check-only", false, "Only check for updates without installing")
 
 	// Create namespace command
@@ -343,6 +347,14 @@ func performUpdate(cmd *cobra.Command, args []string) {
 		return
 	}
 
+	// Prompt user for confirmation unless --force is used
+	if !forceUpdate {
+		if !promptUserConfirmation(hasUpdate, release.TagName) {
+			fmt.Printf("⏹️  Update cancelled by user\n")
+			return
+		}
+	}
+
 	// Perform the update
 	fmt.Printf("🚀 Starting update process...\n")
 	if err := checker.PerformUpdate(release, forceUpdate); err != nil {
@@ -352,6 +364,28 @@ func performUpdate(cmd *cobra.Command, args []string) {
 
 	fmt.Printf("🎉 Update completed successfully!\n")
 	fmt.Printf("💡 You can now use the updated version of kubectl-nuke\n")
+}
+
+func promptUserConfirmation(hasUpdate bool, newVersion string) bool {
+	var message string
+	
+	if hasUpdate {
+		message = fmt.Sprintf("Do you want to update to version %s? (y/N): ", newVersion)
+	} else {
+		message = fmt.Sprintf("Do you want to reinstall version %s? (y/N): ", newVersion)
+	}
+	
+	fmt.Print(message)
+	
+	reader := bufio.NewReader(os.Stdin)
+	response, err := reader.ReadString('\n')
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "❌ Failed to read user input: %v\n", err)
+		return false
+	}
+	
+	response = strings.TrimSpace(strings.ToLower(response))
+	return response == "y" || response == "yes"
 }
 
 func homeDir() string {
