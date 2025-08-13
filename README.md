@@ -12,9 +12,11 @@ A kubectl plugin to forcefully delete Kubernetes resources, including namespaces
 
 - **Namespace Deletion**: Delete namespaces with automatic finalizer removal for stuck resources
 - **Force Mode**: Aggressively delete all resources in a namespace before deletion (`--force` flag)
+- **Diagnostic Mode**: Analyze namespace issues without making changes (`--diagnose-only` flag)
 - **Pod Force Deletion**: Force delete individual pods with grace period 0
 - **Multiple Resource Support**: Handles pods, services, deployments, configmaps, secrets, and more
 - **Smart Finalizer Removal**: Multiple strategies for removing stubborn finalizers
+- **ArgoCD Integration**: Detects and handles ArgoCD-managed resources properly
 - **User-friendly CLI**: Clear status messages with emoji indicators
 - **kubectl Plugin Compatible**: Works as both standalone binary and kubectl plugin
 
@@ -135,6 +137,9 @@ kubectl nuke namespace <namespace>
 kubectl-nuke ns <namespace> --force
 kubectl-nuke ns <namespace> -f
 
+# Diagnostic mode - analyze issues without making changes
+kubectl-nuke ns <namespace> --diagnose-only
+
 # With custom kubeconfig
 kubectl-nuke --kubeconfig /path/to/config ns <namespace>
 kubectl nuke --kubeconfig /path/to/config ns <namespace> --force
@@ -166,6 +171,9 @@ kubectl-nuke ns my-stuck-namespace
 # Aggressively delete a namespace and all its contents
 kubectl-nuke ns my-namespace --force
 
+# Analyze namespace issues without making changes
+kubectl-nuke ns my-namespace --diagnose-only
+
 # Force delete unresponsive pods
 kubectl-nuke pods nginx-123 redis-456 -n production
 
@@ -194,12 +202,37 @@ kubectl nuke pods pod1 pod2 -n my-namespace
 kubectl nuke --kubeconfig /path/to/config ns my-namespace --force
 ```
 
+### Enhanced Diagnostics with ArgoCD Support
+
+```bash
+# Comprehensive diagnostics including ArgoCD analysis
+kubectl-nuke ns my-namespace --diagnose-only
+```
+
+When ArgoCD applications are detected, you'll see detailed information:
+- ArgoCD applications managing the namespace
+- Application sync and health status
+- Specific cleanup recommendations
+- Proper deletion sequence
+
+## ArgoCD Integration
+
+kubectl-nuke now provides enhanced support for namespaces containing ArgoCD-managed resources:
+
+- **Automatic Detection**: Identifies ArgoCD Applications targeting the namespace
+- **Smart Cleanup**: Deletes ArgoCD Applications first to prevent reconciliation conflicts  
+- **Enhanced Diagnostics**: Shows detailed ArgoCD application status and recommendations
+- **Finalizer Handling**: Properly removes ArgoCD finalizers from stuck applications
+
+For detailed information about ArgoCD integration, see [docs/ARGOCD_INTEGRATION.md](docs/ARGOCD_INTEGRATION.md).
+
 ## Command Reference
 
 | Command | Description | Example |
 |---------|-------------|---------|
 | `ns\|namespace <name>` | Delete a namespace (standard mode) | `kubectl-nuke ns my-namespace` |
 | `ns\|namespace <name> -f` | Aggressively delete namespace and all contents | `kubectl-nuke ns my-namespace --force` |
+| `ns\|namespace <name> --diagnose-only` | Analyze namespace issues without deletion | `kubectl-nuke ns my-namespace --diagnose-only` |
 | `pod\|pods\|po <name>...` | Force delete pods with grace period 0 | `kubectl-nuke pods pod1 pod2 -n my-ns` |
 | `version` | Show version information | `kubectl-nuke version` |
 | `help` | Show help for any command | `kubectl-nuke help ns` |

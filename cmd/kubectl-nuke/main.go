@@ -9,6 +9,7 @@ import (
 
 	"github.com/spf13/cobra"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/clientcmd"
 
@@ -196,121 +197,48 @@ func deleteNamespace(cmd *cobra.Command, args []string) {
 		fmt.Printf("📋 Namespace %s is in '%s' state.\n", ns.Name, ns.Status.Phase)
 	}
 
-	// If diagnose-only mode, just run diagnostics and exit
-	if diagnoseOnly {
-		kube.DiagnoseStuckNamespace(ctx, clientset, namespace)
-		return
+	// Get REST config for dynamic client operations
+	config, err := clientcmd.BuildConfigFromFlags("", kubeconfig)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "❌ Failed to build REST config: %v\n", err)
+		os.Exit(1)
 	}
 
-	// If bypass-webhooks is enabled but not force mode, still check for problematic webhooks
-	if bypassWebhooks && !forceDelete {
-		fmt.Printf("🔍 Checking for problematic webhooks...\n")
-		if err := kube.DetectAndHandleWebhookIssues(ctx, clientset, false); err != nil {
-			fmt.Printf("⚠️  Warning: Failed to handle webhook issues: %v\n", err)
-		}
+	// Create dynamic client for ArgoCD operations
+	dynamicClient, err := dynamic.NewForConfig(config)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "❌ Failed to create dynamic client: %v\n", err)
+		os.Exit(1)
 	}
 
-	// If force mode, use aggressive deletion
-	if forceDelete {
-		err = kube.NukeNamespace(ctx, clientset, namespace, bypassWebhooks, forceApiDirect)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "❌ Failed to force delete namespace %s: %v\n", namespace, err)
-			os.Exit(1)
-		}
-
-		// Wait for complete deletion with longer timeout for force mode
-		if kube.WaitForNamespaceDeletion(ctx, clientset, namespace, 30) {
-			fmt.Printf("💥 Namespace %s has been completely nuked!\n", namespace)
-		} else {
-			fmt.Printf("⚠️  Namespace %s may still exist. Check manually with: kubectl get ns %s\n", namespace, namespace)
-		}
-		return
-	}
-
-	// Use internal/kube package for normal deletion logic
-	deleted, terminating, err := kube.DeleteNamespace(ctx, clientset, namespace)
+	// Use enhanced namespace deletion with ArgoCD support
+	err = kube.EnhancedDeleteNamespace(ctx, clientset, namespace, forceDelete, diagnoseOnly)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "❌ Failed to delete namespace %s: %v\n", namespace, err)
 		os.Exit(1)
 	}
 
-	if terminating {
-		fmt.Printf("⚠️  Namespace %s is already in Terminating state. Attempting to force delete by removing finalizers...\n", namespace)
-		
-		// If bypass-webhooks is enabled, check for problematic webhooks
-		if bypassWebhooks {
-			fmt.Printf("🔍 Checking for problematic webhooks...\n")
-			if err := kube.DetectAndHandleWebhookIssues(ctx, clientset, false); err != nil {
-				fmt.Printf("⚠️  Warning: Failed to handle webhook issues: %v\n", err)
-			}
+	// If not in diagnose-only mode, wait for namespace deletion
+	if !diagnoseOnly {
+		// Wait for complete deletion with longer timeout for force mode
+		timeout := 30
+		if !forceDelete {
+			timeout = 15
 		}
 		
-		// Handle PVC finalizers if force-api-direct is enabled
-		if forceApiDirect {
-			if err := kube.HandlePVCFinalizers(ctx, clientset, namespace, true); err != nil {
-				fmt.Printf("⚠️  Warning: Failed to handle PVC finalizers: %v\n", err)
-			}
-		}
-		
-		removed, err := kube.ForceRemoveFinalizers(ctx, clientset, namespace)
-		if err != nil {
-			fmt.Printf("❌ Failed to remove finalizers for %s: %v\n", namespace, err)
-			os.Exit(1)
-		}
-		if removed {
-			fmt.Printf("🔧 Finalizers removed for %s. Waiting for namespace to be deleted...\n", namespace)
-		} else {
-			fmt.Printf("ℹ️  No finalizers found on %s. Namespace should delete naturally or may need manual intervention.\n", namespace)
-		}
-		waitForDeletion(ctx, clientset, namespace, 10)
-		return
-	}
-
-	if deleted {
-		fmt.Printf("📤 Delete request sent for namespace %s. Waiting to see if it terminates...\n", namespace)
-
-		// Wait and check if namespace is deleted, up to 5 seconds
-		if waitForDeletion(ctx, clientset, namespace, 5) {
-			return
-		}
-
-		fmt.Printf("⚠️  Namespace %s was not deleted after 10 seconds. Checking if it's stuck in Terminating...\n", namespace)
-
-		// Check if namespace is now stuck in Terminating
-		nsCheck, err := clientset.CoreV1().Namespaces().Get(ctx, namespace, metav1.GetOptions{})
-		if err == nil && nsCheck.Status.Phase == "Terminating" {
-			fmt.Printf("🔧 Namespace %s is stuck in Terminating. Forcibly removing finalizers...\n", namespace)
-			
-			// If bypass-webhooks is enabled, check for problematic webhooks
-			if bypassWebhooks {
-				fmt.Printf("🔍 Checking for problematic webhooks...\n")
-				if err := kube.DetectAndHandleWebhookIssues(ctx, clientset, false); err != nil {
-					fmt.Printf("⚠️  Warning: Failed to handle webhook issues: %v\n", err)
-				}
-			}
-			
-			// Handle PVC finalizers if force-api-direct is enabled
-			if forceApiDirect {
-				if err := kube.HandlePVCFinalizers(ctx, clientset, namespace, true); err != nil {
-					fmt.Printf("⚠️  Warning: Failed to handle PVC finalizers: %v\n", err)
-				}
-			}
-			
-			removed, err := kube.ForceRemoveFinalizers(ctx, clientset, namespace)
-			if err != nil {
-				fmt.Printf("❌ Failed to remove finalizers for %s: %v\n", namespace, err)
-				os.Exit(1)
-			}
-			if removed {
-				fmt.Printf("🔧 Finalizers removed for %s. Waiting for namespace to be deleted...\n", namespace)
+		if kube.WaitForNamespaceDeletion(ctx, clientset, namespace, timeout) {
+			if forceDelete {
+				fmt.Printf("💥 Namespace %s has been completely nuked!\n", namespace)
 			} else {
-				fmt.Printf("ℹ️  No finalizers found on %s. Namespace should delete naturally or may need manual intervention.\n", namespace)
+				fmt.Printf("✅ Namespace %s deleted successfully!\n", namespace)
 			}
-			waitForDeletion(ctx, clientset, namespace, 10)
 		} else {
-			fmt.Printf("✅ Namespace %s deleted or not stuck in Terminating.\n", namespace)
+			fmt.Printf("⚠️  Namespace %s may still exist. Check manually with: kubectl get ns %s\n", namespace, namespace)
 		}
 	}
+	
+	return
+
 }
 
 func waitForDeletion(ctx context.Context, clientset kubernetes.Interface, namespace string, maxAttempts int) bool {
