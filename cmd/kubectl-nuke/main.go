@@ -263,6 +263,14 @@ func deleteNamespace(cmd *cobra.Command, args []string) {
 	// Pass both forceDelete and isDryRun to the enhanced function
 	err = kube.EnhancedDeleteNamespaceWithDryRun(ctx, clientset, namespace, forceDelete, isDryRun)
 	if err != nil {
+		// Check if the error is because namespace was already deleted (success case)
+		if strings.Contains(err.Error(), "not found") {
+			fmt.Printf("✅ Namespace %s was successfully deleted during execution!\n", namespace)
+			if !isDryRun {
+				fmt.Printf("🎉 Mission accomplished! The namespace cleanup was successful.\n")
+			}
+			return
+		}
 		fmt.Fprintf(os.Stderr, "❌ Failed to delete namespace %s: %v\n", namespace, err)
 		os.Exit(1)
 	}

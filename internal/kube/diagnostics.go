@@ -11,11 +11,15 @@ import (
 
 // DiagnoseStuckNamespace provides detailed diagnostics for stuck namespaces
 func DiagnoseStuckNamespace(ctx context.Context, clientset kubernetes.Interface, namespace string) {
-	fmt.Printf("🔍 Running diagnostics on stuck namespace: %s\n", namespace)
+	fmt.Printf("🔍 Running diagnostics on namespace: %s\n", namespace)
 
 	// Get namespace details
 	ns, err := clientset.CoreV1().Namespaces().Get(ctx, namespace, metav1.GetOptions{})
 	if err != nil {
+		if strings.Contains(err.Error(), "not found") {
+			fmt.Printf("✅ Namespace %s was successfully deleted during execution!\n", namespace)
+			return
+		}
 		fmt.Printf("⚠️  Could not get namespace details: %v\n", err)
 		return
 	}
@@ -79,6 +83,11 @@ func DiagnoseStuckNamespace(ctx context.Context, clientset kubernetes.Interface,
 	for _, rt := range resourceTypes {
 		count, err := rt.listFunc()
 		if err != nil {
+			if strings.Contains(err.Error(), "not found") {
+				// Namespace was deleted during diagnostics
+				fmt.Printf("✅ Namespace %s was successfully deleted during diagnostics!\n", namespace)
+				return
+			}
 			fmt.Printf("⚠️  Error listing %s: %v\n", rt.name, err)
 		} else if count > 0 {
 			fmt.Printf("⚠️  Found %d %s resources still in namespace\n", count, rt.name)
@@ -87,7 +96,12 @@ func DiagnoseStuckNamespace(ctx context.Context, clientset kubernetes.Interface,
 
 	// Check for PVCs with finalizers
 	pvcs, err := clientset.CoreV1().PersistentVolumeClaims(namespace).List(ctx, metav1.ListOptions{})
-	if err == nil && len(pvcs.Items) > 0 {
+	if err != nil {
+		if strings.Contains(err.Error(), "not found") {
+			fmt.Printf("✅ Namespace %s was successfully deleted during diagnostics!\n", namespace)
+			return
+		}
+	} else if len(pvcs.Items) > 0 {
 		for _, pvc := range pvcs.Items {
 			if len(pvc.Finalizers) > 0 {
 				fmt.Printf("⚠️  PVC %s has finalizers: %v\n", pvc.Name, pvc.Finalizers)

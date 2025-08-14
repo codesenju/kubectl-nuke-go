@@ -20,6 +20,11 @@ import (
 func DeleteNamespace(ctx context.Context, clientset kubernetes.Interface, name string) (deleted bool, terminating bool, err error) {
 	ns, err := clientset.CoreV1().Namespaces().Get(ctx, name, metav1.GetOptions{})
 	if err != nil {
+		// If namespace doesn't exist, it was already deleted (success case)
+		if strings.Contains(err.Error(), "not found") {
+			fmt.Printf("✅ Namespace %s was already deleted or deleted during execution\n", name)
+			return true, false, nil
+		}
 		return false, false, err
 	}
 	if ns.Status.Phase == "Terminating" {
@@ -27,6 +32,11 @@ func DeleteNamespace(ctx context.Context, clientset kubernetes.Interface, name s
 	}
 	err = clientset.CoreV1().Namespaces().Delete(ctx, name, metav1.DeleteOptions{})
 	if err != nil {
+		// If namespace doesn't exist during deletion, it was already deleted (success case)
+		if strings.Contains(err.Error(), "not found") {
+			fmt.Printf("✅ Namespace %s was already deleted or deleted during execution\n", name)
+			return true, false, nil
+		}
 		return false, false, err
 	}
 	return true, false, nil
