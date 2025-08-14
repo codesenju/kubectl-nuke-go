@@ -11,6 +11,8 @@ A kubectl plugin to forcefully delete Kubernetes resources, including namespaces
 ## Features
 
 - **Namespace Deletion**: Delete namespaces with automatic finalizer removal for stuck resources
+- **Intelligent CRD Discovery**: Automatically discover and analyze CRDs causing namespace termination issues
+- **Smart CRD Cleanup**: Intelligently clean up problematic CRDs based on namespace conditions and deletion mode
 - **Force Mode**: Aggressively delete all resources in a namespace before deletion (`--force` flag)
 - **Diagnostic Mode**: Analyze namespace issues without making changes (`--diagnose-only` flag)
 - **Pod Force Deletion**: Force delete individual pods with grace period 0
@@ -125,20 +127,24 @@ sudo mv kubectl-nuke /usr/local/bin/
 ### Namespace Deletion
 
 ```sh
-# Standard namespace deletion (standalone binary)
+# Standard namespace deletion with intelligent CRD discovery (standalone binary)
 kubectl-nuke ns <namespace>
 kubectl-nuke namespace <namespace>
 
-# Standard namespace deletion (as kubectl plugin)
+# Standard namespace deletion with intelligent CRD discovery (as kubectl plugin)
 kubectl nuke ns <namespace>
 kubectl nuke namespace <namespace>
 
-# Force mode - aggressively delete all resources first
+# Force mode - aggressively delete all resources and auto-cleanup problematic CRDs
 kubectl-nuke ns <namespace> --force
 kubectl-nuke ns <namespace> -f
 
-# Diagnostic mode - analyze issues without making changes
+# Dry-run mode - analyze issues including CRD discovery without making changes
+kubectl-nuke ns <namespace> --dry-run
 kubectl-nuke ns <namespace> --diagnose-only
+
+# Show debug output of what force mode would do (without actually doing it)
+kubectl-nuke ns <namespace> --force --dry-run
 
 # With custom kubeconfig
 kubectl-nuke --kubeconfig /path/to/config ns <namespace>
@@ -165,19 +171,22 @@ kubectl nuke pods <pod1> <pod2> -n <namespace>
 ### Command Examples
 
 ```sh
-# Delete a stuck namespace normally
+# Delete a stuck namespace with intelligent CRD discovery
 kubectl-nuke ns my-stuck-namespace
 
-# Aggressively delete a namespace and all its contents
+# Aggressively delete a namespace with automatic CRD cleanup
 kubectl-nuke ns my-namespace --force
 
-# Analyze namespace issues without making changes
-kubectl-nuke ns my-namespace --diagnose-only
+# Analyze namespace issues including CRD discovery without making changes
+kubectl-nuke ns my-namespace --dry-run
+
+# Show debug output of what force mode would do (without actually doing it)
+kubectl-nuke ns my-namespace --force --dry-run
 
 # Force delete unresponsive pods
 kubectl-nuke pods nginx-123 redis-456 -n production
 
-# Clean up test environment completely
+# Clean up test environment completely with CRD auto-cleanup
 kubectl-nuke ns test-env -f
 ```
 
@@ -226,13 +235,49 @@ kubectl-nuke now provides enhanced support for namespaces containing ArgoCD-mana
 
 For detailed information about ArgoCD integration, see [docs/ARGOCD_INTEGRATION.md](docs/ARGOCD_INTEGRATION.md).
 
+## CRD Discovery and Auto-Cleanup
+
+kubectl-nuke features intelligent CRD (Custom Resource Definition) discovery to automatically identify and resolve resources causing namespace termination issues:
+
+### 🔍 **Intelligent Discovery**
+- **Namespace Condition Analysis**: Parses namespace conditions to identify specific messages about finalizers and resources remaining
+- **Automatic CRD Scanning**: Discovers all custom resources in the namespace that have finalizers
+- **Root Cause Identification**: Pinpoints exactly which CRDs, resources, and finalizers are preventing namespace deletion
+
+### 🧹 **Smart Cleanup**
+- **Standard Mode**: Only cleans up CRDs when namespace conditions indicate they're causing termination issues
+- **Force Mode**: Aggressively cleans up all CRDs that have finalizers
+- **Multiple Strategies**: Uses both patch and update methods for reliable finalizer removal
+- **Retry Logic**: Re-attempts cleanup if the namespace remains stuck after initial cleanup
+
+### 🔍 **Enhanced Diagnostics**
+- **Detailed Reporting**: Shows exactly which CRDs, resources, and finalizers are problematic
+- **Clear Recommendations**: Provides specific kubectl commands for manual cleanup
+- **Debug Mode**: `--force --dry-run` shows step-by-step breakdown of what aggressive cleanup would do
+
+### 📋 **Usage Examples**
+```bash
+# Analyze CRD issues without making changes
+kubectl-nuke ns stuck-namespace --dry-run
+
+# Show debug output of what force mode would do
+kubectl-nuke ns stuck-namespace --force --dry-run
+
+# Standard cleanup (only problematic CRDs)
+kubectl-nuke ns stuck-namespace
+
+# Aggressive cleanup (all CRDs with finalizers)
+kubectl-nuke ns stuck-namespace --force
+```
+
 ## Command Reference
 
 | Command | Description | Example |
 |---------|-------------|---------|
-| `ns\|namespace <name>` | Delete a namespace (standard mode) | `kubectl-nuke ns my-namespace` |
-| `ns\|namespace <name> -f` | Aggressively delete namespace and all contents | `kubectl-nuke ns my-namespace --force` |
-| `ns\|namespace <name> --diagnose-only` | Analyze namespace issues without deletion | `kubectl-nuke ns my-namespace --diagnose-only` |
+| `ns\|namespace <name>` | Delete a namespace with intelligent CRD discovery | `kubectl-nuke ns my-namespace` |
+| `ns\|namespace <name> -f` | Aggressively delete namespace and auto-cleanup all problematic CRDs | `kubectl-nuke ns my-namespace --force` |
+| `ns\|namespace <name> --dry-run` | Analyze namespace issues including CRD discovery without deletion | `kubectl-nuke ns my-namespace --dry-run` |
+| `ns\|namespace <name> -f --dry-run` | Show debug output of what force mode would do without doing it | `kubectl-nuke ns my-namespace --force --dry-run` |
 | `pod\|pods\|po <name>...` | Force delete pods with grace period 0 | `kubectl-nuke pods pod1 pod2 -n my-ns` |
 | `version` | Show version information | `kubectl-nuke version` |
 | `help` | Show help for any command | `kubectl-nuke help ns` |

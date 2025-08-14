@@ -14,8 +14,8 @@ import (
 	"github.com/codesenju/kubectl-nuke-go/pkg/argocd"
 )
 
-// EnhancedDeleteNamespace provides ArgoCD-aware namespace deletion
-func EnhancedDeleteNamespace(ctx context.Context, clientset kubernetes.Interface, namespace string, forceDelete bool, diagnoseOnly bool) error {
+// EnhancedDeleteNamespaceWithOptions provides ArgoCD-aware namespace deletion with intelligent CRD cleanup
+func EnhancedDeleteNamespaceWithOptions(ctx context.Context, clientset kubernetes.Interface, namespace string, forceDelete bool, diagnoseOnly bool, aggressiveCRDCleanup bool) error {
 	// Get REST config for dynamic client operations
 	config, err := GetRESTConfig(clientset)
 	if err != nil {
@@ -48,12 +48,20 @@ func EnhancedDeleteNamespace(ctx context.Context, clientset kubernetes.Interface
 		fmt.Printf("ℹ️  No ArgoCD applications found managing this namespace\n")
 	}
 
-	// Phase 2: Enhanced diagnostics with ArgoCD awareness
-	if diagnoseOnly {
-		return EnhancedDiagnoseNamespace(ctx, clientset, dynamicClient, namespace, argoCDApps)
+	// Phase 2: Discover problematic CRDs (always run for diagnostics)
+	fmt.Printf("\n🔍 Discovering CRDs that might be causing namespace termination issues...\n")
+	crdDiscoveryResult, err := DiscoverProblematicCRDs(ctx, clientset, namespace)
+	if err != nil {
+		fmt.Printf("⚠️  Warning: Failed to discover problematic CRDs: %v\n", err)
+		crdDiscoveryResult = &CRDDiscoveryResult{} // Continue with empty result
 	}
 
-	// Phase 3: Handle ArgoCD applications first (if any)
+	// Phase 3: Enhanced diagnostics with ArgoCD and CRD awareness
+	if diagnoseOnly {
+		return EnhancedDiagnoseNamespaceWithCRDs(ctx, clientset, dynamicClient, namespace, argoCDApps, crdDiscoveryResult)
+	}
+
+	// Phase 4: Handle ArgoCD applications first (if any)
 	if len(argoCDApps) > 0 {
 		fmt.Printf("🔄 Handling ArgoCD applications before namespace deletion...\n")
 		
@@ -67,11 +75,271 @@ func EnhancedDeleteNamespace(ctx context.Context, clientset kubernetes.Interface
 		time.Sleep(10 * time.Second)
 	}
 
-	// Phase 4: Proceed with namespace deletion based on mode
+	// Phase 5: Intelligent CRD cleanup based on mode
+	shouldCleanupCRDs := false
+	
+	if forceDelete {
+		// Force mode: Always cleanup CRDs if any are found with finalizers
+		shouldCleanupCRDs = len(crdDiscoveryResult.ProblematicCRDs) > 0
+		if shouldCleanupCRDs {
+			fmt.Printf("\n💥 FORCE MODE: Aggressively cleaning up all problematic CRDs...\n")
+		}
+	} else {
+		// Standard mode: Only cleanup CRDs if namespace conditions indicate they're causing issues
+		shouldCleanupCRDs = (crdDiscoveryResult.NamespaceStatus.HasFinalizersRemaining || 
+							 crdDiscoveryResult.NamespaceStatus.HasResourcesRemaining) && 
+							len(crdDiscoveryResult.ProblematicCRDs) > 0
+		if shouldCleanupCRDs {
+			fmt.Printf("\n🧹 Namespace conditions indicate CRD issues - attempting cleanup...\n")
+		}
+	}
+	
+	if shouldCleanupCRDs {
+		if err := AttemptCRDCleanup(ctx, clientset, crdDiscoveryResult, namespace); err != nil {
+			fmt.Printf("⚠️  Warning: Failed to clean up some CRDs: %v\n", err)
+		}
+	} else if len(crdDiscoveryResult.ProblematicCRDs) > 0 {
+		fmt.Printf("\n💡 Found %d CRDs with finalizers, but namespace conditions don't indicate they're blocking deletion\n", len(crdDiscoveryResult.ProblematicCRDs))
+		fmt.Printf("💡 Use --force flag for aggressive CRD cleanup if needed\n")
+	}
+
+	// Phase 6: Proceed with namespace deletion based on mode
 	if forceDelete {
 		return EnhancedNukeNamespace(ctx, clientset, dynamicClient, namespace, detector)
 	}
-	return EnhancedStandardDelete(ctx, clientset, namespace)
+	return EnhancedStandardDeleteWithCRDRetry(ctx, clientset, namespace, crdDiscoveryResult)
+}
+
+// EnhancedDeleteNamespaceWithDryRun provides ArgoCD-aware namespace deletion with dry-run support
+func EnhancedDeleteNamespaceWithDryRun(ctx context.Context, clientset kubernetes.Interface, namespace string, forceDelete bool, isDryRun bool) error {
+	// Get REST config for dynamic client operations
+	config, err := GetRESTConfig(clientset)
+	if err != nil {
+		return fmt.Errorf("failed to get REST config: %w", err)
+	}
+
+	// Create dynamic client for ArgoCD operations
+	dynamicClient, err := dynamic.NewForConfig(config)
+	if err != nil {
+		return fmt.Errorf("failed to create dynamic client: %w", err)
+	}
+
+	// Create ArgoCD detector and handler
+	detector := argocd.NewDetector(clientset, dynamicClient)
+	handler := argocd.NewHandler(dynamicClient)
+
+	// Phase 1: Detect ArgoCD applications managing this namespace
+	fmt.Printf("🔍 Checking for ArgoCD applications managing namespace: %s\n", namespace)
+	argoCDApps, err := detector.DetectArgoCDAppsForNamespace(ctx, namespace)
+	if err != nil {
+		fmt.Printf("⚠️  Warning: Failed to detect ArgoCD applications: %v\n", err)
+	}
+
+	if len(argoCDApps) > 0 {
+		fmt.Printf("🎯 Found %d ArgoCD application(s) managing this namespace:\n", len(argoCDApps))
+		for _, app := range argoCDApps {
+			fmt.Printf("  - %s/%s\n", app.GetNamespace(), app.GetName())
+		}
+	} else {
+		fmt.Printf("ℹ️  No ArgoCD applications found managing this namespace\n")
+	}
+
+	// Phase 2: Discover problematic CRDs (always run for diagnostics)
+	fmt.Printf("\n🔍 Discovering CRDs that might be causing namespace termination issues...\n")
+	crdDiscoveryResult, err := DiscoverProblematicCRDs(ctx, clientset, namespace)
+	if err != nil {
+		fmt.Printf("⚠️  Warning: Failed to discover problematic CRDs: %v\n", err)
+		crdDiscoveryResult = &CRDDiscoveryResult{} // Continue with empty result
+	}
+
+	// Phase 3: Enhanced diagnostics with ArgoCD and CRD awareness (always run in dry-run)
+	if isDryRun {
+		if forceDelete {
+			return EnhancedDryRunWithForceMode(ctx, clientset, dynamicClient, namespace, argoCDApps, crdDiscoveryResult)
+		} else {
+			return EnhancedDiagnoseNamespaceWithCRDs(ctx, clientset, dynamicClient, namespace, argoCDApps, crdDiscoveryResult)
+		}
+	}
+
+	// Phase 4: Handle ArgoCD applications first (if any)
+	if len(argoCDApps) > 0 {
+		fmt.Printf("🔄 Handling ArgoCD applications before namespace deletion...\n")
+		
+		// Delete ArgoCD applications first
+		if err := handler.DeleteApplications(ctx, argoCDApps); err != nil {
+			fmt.Printf("⚠️  Warning: Failed to delete some ArgoCD applications: %v\n", err)
+		}
+
+		// Wait a bit for ArgoCD to clean up resources
+		fmt.Printf("⏳ Waiting for ArgoCD to clean up resources...\n")
+		time.Sleep(10 * time.Second)
+	}
+
+	// Phase 5: Intelligent CRD cleanup based on mode
+	shouldCleanupCRDs := false
+	
+	if forceDelete {
+		// Force mode: Always cleanup CRDs if any are found with finalizers
+		shouldCleanupCRDs = len(crdDiscoveryResult.ProblematicCRDs) > 0
+		if shouldCleanupCRDs {
+			fmt.Printf("\n💥 FORCE MODE: Aggressively cleaning up all problematic CRDs...\n")
+		}
+	} else {
+		// Standard mode: Only cleanup CRDs if namespace conditions indicate they're causing issues
+		shouldCleanupCRDs = (crdDiscoveryResult.NamespaceStatus.HasFinalizersRemaining || 
+							 crdDiscoveryResult.NamespaceStatus.HasResourcesRemaining) && 
+							len(crdDiscoveryResult.ProblematicCRDs) > 0
+		if shouldCleanupCRDs {
+			fmt.Printf("\n🧹 Namespace conditions indicate CRD issues - attempting cleanup...\n")
+		}
+	}
+	
+	if shouldCleanupCRDs {
+		if err := AttemptCRDCleanup(ctx, clientset, crdDiscoveryResult, namespace); err != nil {
+			fmt.Printf("⚠️  Warning: Failed to clean up some CRDs: %v\n", err)
+		}
+	} else if len(crdDiscoveryResult.ProblematicCRDs) > 0 {
+		fmt.Printf("\n💡 Found %d CRDs with finalizers, but namespace conditions don't indicate they're blocking deletion\n", len(crdDiscoveryResult.ProblematicCRDs))
+		fmt.Printf("💡 Use --force flag for aggressive CRD cleanup if needed\n")
+	}
+
+	// Phase 6: Proceed with namespace deletion based on mode
+	if forceDelete {
+		return EnhancedNukeNamespace(ctx, clientset, dynamicClient, namespace, detector)
+	}
+	return EnhancedStandardDeleteWithCRDRetry(ctx, clientset, namespace, crdDiscoveryResult)
+}
+
+// EnhancedDryRunWithForceMode shows debug output of what force mode would do without actually doing it
+func EnhancedDryRunWithForceMode(
+	ctx context.Context, 
+	clientset kubernetes.Interface, 
+	dynamicClient dynamic.Interface,
+	namespace string,
+	argoCDApps []unstructured.Unstructured,
+	crdResult *CRDDiscoveryResult,
+) error {
+	fmt.Printf("🔍 DRY-RUN + FORCE MODE: Debug output for namespace: %s\n", namespace)
+	fmt.Printf("=======================================================\n")
+
+	// Run standard diagnostics first
+	DiagnoseStuckNamespace(ctx, clientset, namespace)
+
+	// Show what would be done with ArgoCD applications
+	if len(argoCDApps) > 0 {
+		fmt.Printf("\n🔍 ARGOCD APPLICATIONS (WOULD BE HANDLED):\n")
+		fmt.Printf("=========================================\n")
+		fmt.Printf("🎯 Found %d ArgoCD application(s) that WOULD BE DELETED:\n", len(argoCDApps))
+		
+		for _, app := range argoCDApps {
+			appName := app.GetName()
+			appNamespace := app.GetNamespace()
+			
+			fmt.Printf("\n📊 ArgoCD Application: %s/%s\n", appNamespace, appName)
+			fmt.Printf("   🗑️  WOULD DELETE: kubectl delete application %s -n %s\n", appName, appNamespace)
+			
+			// Check application finalizers
+			finalizers := app.GetFinalizers()
+			if len(finalizers) > 0 {
+				fmt.Printf("   ⚠️  Has finalizers: %v\n", finalizers)
+				fmt.Printf("   🔧 WOULD REMOVE FINALIZERS if stuck\n")
+			}
+			
+			// Extract and display destination info
+			destination, found, _ := unstructured.NestedMap(app.Object, "spec", "destination")
+			if found {
+				fmt.Printf("   🔗 Destination: ")
+				if server, ok := destination["server"].(string); ok {
+					fmt.Printf("Server=%s, ", server)
+				}
+				if ns, ok := destination["namespace"].(string); ok {
+					fmt.Printf("Namespace=%s", ns)
+				}
+				fmt.Println()
+			}
+		}
+	}
+
+	// Show what would be done with CRDs
+	if len(crdResult.ProblematicCRDs) > 0 {
+		fmt.Printf("\n🎯 CRD CLEANUP (WOULD BE PERFORMED):\n")
+		fmt.Printf("===================================\n")
+		fmt.Printf("💥 FORCE MODE would aggressively clean up %d problematic CRDs:\n", len(crdResult.ProblematicCRDs))
+		
+		for i, crd := range crdResult.ProblematicCRDs {
+			fmt.Printf("\n%d. CRD: %s (Group: %s, Version: %s)\n", i+1, crd.Name, crd.Group, crd.Version)
+			fmt.Printf("   Kind: %s\n", crd.Kind)
+			fmt.Printf("   Total Resources: %d\n", crd.TotalResources)
+			fmt.Printf("   Resources with Finalizers: %d\n", len(crd.ResourcesWithFinalizers))
+			
+			fmt.Printf("   📋 WOULD CLEAN UP these resources:\n")
+			for _, resource := range crd.ResourcesWithFinalizers {
+				fmt.Printf("     - %s (finalizers: %v)\n", resource.Name, resource.Finalizers)
+				fmt.Printf("       🔧 WOULD REMOVE FINALIZERS: kubectl patch %s %s -n %s --type json -p '[{\"op\":\"remove\",\"path\":\"/metadata/finalizers\"}]'\n", 
+					crd.Name, resource.Name, namespace)
+				fmt.Printf("       🗑️  WOULD DELETE: kubectl delete %s %s -n %s --grace-period=0\n", 
+					crd.Name, resource.Name, namespace)
+			}
+		}
+	} else {
+		fmt.Printf("\n✅ CRD ANALYSIS:\n")
+		fmt.Printf("===============\n")
+		fmt.Printf("No problematic CRDs found - force mode would skip CRD cleanup\n")
+	}
+
+	// Show what would be done with namespace
+	fmt.Printf("\n💥 NAMESPACE DELETION (WOULD BE PERFORMED):\n")
+	fmt.Printf("==========================================\n")
+	fmt.Printf("FORCE MODE would perform these actions:\n")
+	fmt.Printf("1. 🚀 WOULD FORCE DELETE all pods with grace period 0\n")
+	fmt.Printf("2. 🗑️  WOULD DELETE all services, deployments, configmaps, secrets\n")
+	fmt.Printf("3. 💥 WOULD FORCE DELETE all custom resources\n")
+	fmt.Printf("4. 🔧 WOULD REMOVE finalizers from all resources\n")
+	fmt.Printf("5. 🗑️  WOULD DELETE the namespace itself\n")
+	fmt.Printf("6. 🔧 WOULD REMOVE namespace finalizers if stuck\n")
+
+	// Show comprehensive recommendations
+	fmt.Printf("\n💡 COMPREHENSIVE RECOMMENDATIONS:\n")
+	fmt.Printf("================================\n")
+	
+	step := 1
+	
+	if len(argoCDApps) > 0 {
+		fmt.Printf("%d. Delete the ArgoCD Application(s) first:\n", step)
+		for _, app := range argoCDApps {
+			fmt.Printf("   kubectl delete application %s -n %s\n", app.GetName(), app.GetNamespace())
+		}
+		fmt.Printf("\n   If applications are stuck, remove their finalizers:\n")
+		for _, app := range argoCDApps {
+			fmt.Printf("   kubectl patch application %s -n %s --type json -p '[{\"op\":\"remove\",\"path\":\"/metadata/finalizers\"}]'\n", 
+				app.GetName(), app.GetNamespace())
+		}
+		step++
+	}
+	
+	if len(crdResult.ProblematicCRDs) > 0 {
+		fmt.Printf("\n%d. Clean up problematic CRDs:\n", step)
+		for _, crd := range crdResult.ProblematicCRDs {
+			fmt.Printf("   For CRD %s:\n", crd.Name)
+			for _, resource := range crd.ResourcesWithFinalizers {
+				fmt.Printf("   kubectl patch %s %s -n %s --type json -p '[{\"op\":\"remove\",\"path\":\"/metadata/finalizers\"}]'\n", 
+					crd.Name, resource.Name, namespace)
+			}
+		}
+		step++
+	}
+	
+	fmt.Printf("\n%d. Execute the actual cleanup:\n", step)
+	fmt.Printf("   # Standard mode (cleans up CRDs only if they're causing termination issues)\n")
+	fmt.Printf("   kubectl-nuke ns %s\n", namespace)
+	fmt.Printf("   \n")
+	fmt.Printf("   # Force mode (aggressively cleans up all CRDs with finalizers)\n")
+	fmt.Printf("   kubectl-nuke ns %s --force\n", namespace)
+	
+	fmt.Printf("\n%d. If all else fails, try with webhook bypass:\n", step+1)
+	fmt.Printf("   kubectl-nuke ns %s --force --bypass-webhooks\n", namespace)
+	
+	return nil
 }
 
 // EnhancedNukeNamespace performs aggressive namespace deletion with ArgoCD awareness
@@ -87,8 +355,8 @@ func EnhancedNukeNamespace(ctx context.Context, clientset kubernetes.Interface, 
 	return NukeNamespace(ctx, clientset, namespace, false, false)
 }
 
-// EnhancedStandardDelete performs standard namespace deletion with ArgoCD awareness
-func EnhancedStandardDelete(ctx context.Context, clientset kubernetes.Interface, namespace string) error {
+// EnhancedStandardDeleteWithCRDRetry performs standard namespace deletion with CRD retry capability
+func EnhancedStandardDeleteWithCRDRetry(ctx context.Context, clientset kubernetes.Interface, namespace string, crdResult *CRDDiscoveryResult) error {
 	fmt.Printf("🔄 Enhanced standard deletion of namespace: %s\n", namespace)
 
 	// Use existing standard deletion logic
@@ -98,7 +366,17 @@ func EnhancedStandardDelete(ctx context.Context, clientset kubernetes.Interface,
 	}
 
 	if terminating {
-		fmt.Printf("⚠️  Namespace %s is stuck in Terminating state. Attempting finalizer removal...\n", namespace)
+		fmt.Printf("⚠️  Namespace %s is stuck in Terminating state.\n", namespace)
+		
+		// If we have CRD discovery results and there are problematic CRDs, try cleaning them up again
+		if len(crdResult.ProblematicCRDs) > 0 {
+			fmt.Printf("🔄 Re-attempting CRD cleanup for stuck namespace...\n")
+			if err := AttemptCRDCleanup(ctx, clientset, crdResult, namespace); err != nil {
+				fmt.Printf("⚠️  Warning: CRD cleanup retry failed: %v\n", err)
+			}
+		}
+		
+		fmt.Printf("🔧 Attempting finalizer removal...\n")
 		removed, err := ForceRemoveFinalizers(ctx, clientset, namespace)
 		if err != nil {
 			return fmt.Errorf("failed to remove finalizers: %w", err)
@@ -112,6 +390,130 @@ func EnhancedStandardDelete(ctx context.Context, clientset kubernetes.Interface,
 		fmt.Printf("📤 Delete request sent for namespace %s\n", namespace)
 	}
 
+	return nil
+}
+
+// EnhancedDiagnoseNamespaceWithCRDs provides detailed diagnostics with ArgoCD and CRD awareness
+func EnhancedDiagnoseNamespaceWithCRDs(
+	ctx context.Context, 
+	clientset kubernetes.Interface, 
+	dynamicClient dynamic.Interface,
+	namespace string,
+	argoCDApps []unstructured.Unstructured,
+	crdResult *CRDDiscoveryResult,
+) error {
+	fmt.Printf("🔍 Running enhanced diagnostics with CRD discovery on namespace: %s\n", namespace)
+
+	// Run standard diagnostics first
+	DiagnoseStuckNamespace(ctx, clientset, namespace)
+
+	// Enhanced ArgoCD diagnostics
+	if len(argoCDApps) > 0 {
+		fmt.Printf("\n🔍 ARGOCD DIAGNOSTICS:\n")
+		fmt.Printf("====================\n")
+		fmt.Printf("🎯 Found %d ArgoCD application(s) managing this namespace:\n", len(argoCDApps))
+		
+		for _, app := range argoCDApps {
+			appName := app.GetName()
+			appNamespace := app.GetNamespace()
+			
+			fmt.Printf("\n📊 ArgoCD Application: %s/%s\n", appNamespace, appName)
+			
+			// Check application finalizers
+			finalizers := app.GetFinalizers()
+			if len(finalizers) > 0 {
+				fmt.Printf("⚠️  Application has finalizers: %v\n", finalizers)
+				fmt.Printf("💡 Tip: These finalizers may prevent proper cleanup\n")
+			}
+			
+			// Extract and display destination info
+			destination, found, _ := unstructured.NestedMap(app.Object, "spec", "destination")
+			if found {
+				fmt.Printf("🔗 Destination: ")
+				if server, ok := destination["server"].(string); ok {
+					fmt.Printf("Server=%s, ", server)
+				}
+				if ns, ok := destination["namespace"].(string); ok {
+					fmt.Printf("Namespace=%s", ns)
+				}
+				fmt.Println()
+			}
+			
+			// Extract sync status
+			syncStatus, found, _ := unstructured.NestedMap(app.Object, "status", "sync")
+			if found {
+				if status, ok := syncStatus["status"].(string); ok {
+					fmt.Printf("🔄 Sync Status: %s\n", status)
+				}
+			}
+			
+			// Extract health status
+			healthStatus, found, _ := unstructured.NestedMap(app.Object, "status", "health")
+			if found {
+				if status, ok := healthStatus["status"].(string); ok {
+					fmt.Printf("💓 Health Status: %s\n", status)
+				}
+				if message, ok := healthStatus["message"].(string); ok && message != "" {
+					fmt.Printf("   Message: %s\n", message)
+				}
+			}
+		}
+	}
+
+	// CRD Discovery Results (already displayed by DiscoverProblematicCRDs)
+	if len(crdResult.ProblematicCRDs) > 0 {
+		fmt.Printf("\n🎯 CRD ANALYSIS SUMMARY:\n")
+		fmt.Printf("======================\n")
+		fmt.Printf("Found %d problematic CRDs with resources that have finalizers\n", len(crdResult.ProblematicCRDs))
+		
+		totalResourcesWithFinalizers := 0
+		for _, crd := range crdResult.ProblematicCRDs {
+			totalResourcesWithFinalizers += len(crd.ResourcesWithFinalizers)
+		}
+		fmt.Printf("Total resources with finalizers: %d\n", totalResourcesWithFinalizers)
+	}
+	
+	// Combined recommendations
+	fmt.Printf("\n💡 COMPREHENSIVE RECOMMENDATIONS:\n")
+	fmt.Printf("================================\n")
+	
+	step := 1
+	
+	if len(argoCDApps) > 0 {
+		fmt.Printf("%d. Delete the ArgoCD Application(s) first:\n", step)
+		for _, app := range argoCDApps {
+			fmt.Printf("   kubectl delete application %s -n %s\n", app.GetName(), app.GetNamespace())
+		}
+		fmt.Printf("\n   If applications are stuck, remove their finalizers:\n")
+		for _, app := range argoCDApps {
+			fmt.Printf("   kubectl patch application %s -n %s --type json -p '[{\"op\":\"remove\",\"path\":\"/metadata/finalizers\"}]'\n", 
+				app.GetName(), app.GetNamespace())
+		}
+		step++
+	}
+	
+	if len(crdResult.ProblematicCRDs) > 0 {
+		fmt.Printf("\n%d. Clean up problematic CRDs:\n", step)
+		for _, crd := range crdResult.ProblematicCRDs {
+			fmt.Printf("   For CRD %s:\n", crd.Name)
+			for _, resource := range crd.ResourcesWithFinalizers {
+				fmt.Printf("   kubectl patch %s %s -n %s --type json -p '[{\"op\":\"remove\",\"path\":\"/metadata/finalizers\"}]'\n", 
+					crd.Name, resource.Name, namespace)
+			}
+		}
+		step++
+	}
+	
+	fmt.Printf("\n%d. Use kubectl-nuke with intelligent CRD cleanup:\n", step)
+	fmt.Printf("   # Standard mode (cleans up CRDs only if they're causing termination issues)\n")
+	fmt.Printf("   kubectl-nuke ns %s\n", namespace)
+	fmt.Printf("   \n")
+	fmt.Printf("   # Force mode (aggressively cleans up all CRDs with finalizers)\n")
+	fmt.Printf("   kubectl-nuke ns %s --force\n", namespace)
+	
+	fmt.Printf("\n%d. If all else fails, try with webhook bypass:\n", step+1)
+	fmt.Printf("   kubectl-nuke ns %s --force --bypass-webhooks\n", namespace)
+	
 	return nil
 }
 
@@ -203,4 +605,10 @@ func convertToUnstructured(obj interface{}) *unstructured.Unstructured {
 	}
 	
 	return u
+}
+
+// EnhancedDeleteNamespace provides ArgoCD-aware namespace deletion with CRD discovery (backward compatibility)
+func EnhancedDeleteNamespace(ctx context.Context, clientset kubernetes.Interface, namespace string, forceDelete bool, diagnoseOnly bool) error {
+	// Call the new function with dry-run mode
+	return EnhancedDeleteNamespaceWithDryRun(ctx, clientset, namespace, forceDelete, diagnoseOnly)
 }

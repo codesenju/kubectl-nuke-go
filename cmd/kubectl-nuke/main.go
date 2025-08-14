@@ -120,16 +120,29 @@ The command will:
 3. If the namespace gets stuck in Terminating state, remove finalizers to force deletion
 4. Wait and verify the namespace is fully deleted
 
-With --force flag, it will aggressively delete all resources first before deleting the namespace.
+With --force flag, it will:
+- Aggressively delete all resources in the namespace first
+- Automatically discover and clean up problematic CRDs causing termination issues
+- Remove finalizers from stuck resources
+
+With --dry-run/--diagnose-only flag, it will only analyze issues without attempting deletion.
+When combined with --force, it shows debug-level output of what aggressive cleanup would do.
+
 With --bypass-webhooks flag, it will temporarily disable problematic webhooks that might block deletion.
-With --force-api-direct flag, it will use direct API server calls to bypass admission controllers.
-With --diagnose-only flag, it will only diagnose issues without attempting deletion.`,
-		Example: `  # Delete a namespace
+With --force-api-direct flag, it will use direct API server calls to bypass admission controllers.`,
+		Example: `  # Delete a namespace (standard mode with CRD discovery)
   kubectl-nuke ns my-namespace
   
-  # Aggressively delete a namespace and all its contents
+  # Aggressively delete a namespace with auto CRD cleanup
   kubectl-nuke ns my-namespace --force
   kubectl-nuke ns my-namespace -f
+  
+  # Analyze issues without making changes (dry-run mode)
+  kubectl-nuke ns my-namespace --dry-run
+  kubectl-nuke ns my-namespace --diagnose-only
+  
+  # Show debug output of what force mode would do (without actually doing it)
+  kubectl-nuke ns my-namespace --force --dry-run
   
   # Bypass webhooks that might block deletion
   kubectl-nuke ns my-namespace --bypass-webhooks
@@ -137,18 +150,16 @@ With --diagnose-only flag, it will only diagnose issues without attempting delet
   # Use direct API calls for most aggressive deletion
   kubectl-nuke ns my-namespace --force --force-api-direct
   
-  # Only diagnose issues without attempting deletion
-  kubectl-nuke ns my-namespace --diagnose-only
-  
   # Delete a namespace with custom kubeconfig
   kubectl-nuke --kubeconfig /path/to/config ns my-namespace`,
 		Args: cobra.ExactArgs(1),
 		Run:  deleteNamespace,
 	}
-	nsCmd.Flags().BoolVarP(&forceDelete, "force", "f", false, "Aggressively delete all resources in the namespace first (DESTRUCTIVE)")
+	nsCmd.Flags().BoolVarP(&forceDelete, "force", "f", false, "Aggressively delete all resources and auto-cleanup problematic CRDs (DESTRUCTIVE)")
 	nsCmd.Flags().BoolVar(&bypassWebhooks, "bypass-webhooks", false, "Temporarily disable webhooks that might block deletion")
 	nsCmd.Flags().BoolVar(&forceAPIDirect, "force-api-direct", false, "Use direct API server calls to bypass admission controllers (requires kubectl)")
-	nsCmd.Flags().BoolVar(&diagnoseOnly, "diagnose-only", false, "Only diagnose issues without attempting deletion")
+	nsCmd.Flags().BoolVar(&diagnoseOnly, "diagnose-only", false, "Only analyze issues without attempting deletion (alias: --dry-run)")
+	nsCmd.Flags().BoolVar(&diagnoseOnly, "dry-run", false, "Only analyze issues without attempting deletion (alias: --diagnose-only)")
 
 	// Create pod command for force deleting pods
 	var podCmd = &cobra.Command{
@@ -197,10 +208,22 @@ func deleteNamespace(cmd *cobra.Command, args []string) {
 	bypassWebhooks, _ := cmd.Flags().GetBool("bypass-webhooks")
 	forceAPIDirect, _ := cmd.Flags().GetBool("force-api-direct")
 	diagnoseOnly, _ := cmd.Flags().GetBool("diagnose-only")
+	dryRun, _ := cmd.Flags().GetBool("dry-run")
 
-	if forceDelete {
+	// Combine diagnose-only and dry-run flags
+	isDryRun := diagnoseOnly || dryRun
+
+	if forceDelete && isDryRun {
+		fmt.Printf("🔍 DRY-RUN + FORCE MODE: Showing debug output of what aggressive deletion would do\n")
+		fmt.Printf("⚠️  This is a dry-run - no actual changes will be made\n")
+		fmt.Printf("💥 Would aggressively delete namespace: %s\n", namespace)
+		fmt.Printf("🤖 Would automatically discover and clean up problematic CRDs\n")
+	} else if forceDelete {
 		fmt.Printf("💥 FORCE MODE: Preparing to aggressively delete namespace: %s\n", namespace)
 		fmt.Printf("⚠️  WARNING: This will forcefully delete ALL resources in the namespace!\n")
+		fmt.Printf("🤖 AUTO CRD CLEANUP: Will automatically discover and clean up problematic CRDs\n")
+	} else if isDryRun {
+		fmt.Printf("🔍 DRY-RUN MODE: Analyzing namespace without making changes: %s\n", namespace)
 	} else {
 		fmt.Printf("🔍 Checking namespace: %s\n", namespace)
 	}
@@ -226,7 +249,9 @@ func deleteNamespace(cmd *cobra.Command, args []string) {
 		os.Exit(1)
 	}
 
-	if !forceDelete && !diagnoseOnly {
+	if !forceDelete && !isDryRun {
+		fmt.Printf("📋 Namespace %s is in '%s' state.\n", ns.Name, ns.Status.Phase)
+	} else if isDryRun {
 		fmt.Printf("📋 Namespace %s is in '%s' state.\n", ns.Name, ns.Status.Phase)
 	}
 
@@ -234,15 +259,16 @@ func deleteNamespace(cmd *cobra.Command, args []string) {
 	_ = bypassWebhooks
 	_ = forceAPIDirect
 
-	// Use enhanced namespace deletion with ArgoCD support
-	err = kube.EnhancedDeleteNamespace(ctx, clientset, namespace, forceDelete, diagnoseOnly)
+	// Use enhanced namespace deletion with ArgoCD and CRD support
+	// Pass both forceDelete and isDryRun to the enhanced function
+	err = kube.EnhancedDeleteNamespaceWithDryRun(ctx, clientset, namespace, forceDelete, isDryRun)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "❌ Failed to delete namespace %s: %v\n", namespace, err)
 		os.Exit(1)
 	}
 
-	// If not in diagnose-only mode, wait for namespace deletion
-	if !diagnoseOnly {
+	// If not in dry-run mode, wait for namespace deletion
+	if !isDryRun {
 		// Wait for complete deletion with longer timeout for force mode
 		timeout := 30
 		if !forceDelete {
