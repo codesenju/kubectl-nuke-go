@@ -30,6 +30,9 @@
 - Improved resource discovery and processing
 
 ### Fixed
+- **Improved Error Handling**: Better messaging when namespace gets deleted during execution
+- **Success Detection**: Properly detect and report when namespace deletion succeeds during CLI operation
+- **User Experience**: Replace confusing "not found" errors with positive success messages
 - Fixed issue with stuck namespaces containing Longhorn resources
 - Improved handling of custom resources with finalizers
 - Better error reporting for resource deletion failures
