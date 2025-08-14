@@ -95,6 +95,10 @@ func DiscoverProblematicCRDs(ctx context.Context, clientset kubernetes.Interface
 func analyzeNamespaceConditions(ctx context.Context, clientset kubernetes.Interface, namespace string) (*NamespaceConditionInfo, error) {
 	ns, err := clientset.CoreV1().Namespaces().Get(ctx, namespace, metav1.GetOptions{})
 	if err != nil {
+		if strings.Contains(err.Error(), "not found") {
+			fmt.Printf("✅ Namespace %s was successfully deleted during analysis!\n", namespace)
+			return &NamespaceConditionInfo{}, nil
+		}
 		return nil, err
 	}
 
@@ -185,6 +189,10 @@ func checkCRDForFinalizers(ctx context.Context, dynamicClient dynamic.Interface,
 	// List all resources of this type in the namespace
 	resourceList, err := dynamicClient.Resource(gvr).Namespace(namespace).List(ctx, metav1.ListOptions{})
 	if err != nil {
+		if strings.Contains(err.Error(), "not found") {
+			// Namespace was deleted during execution - this is a success case
+			return nil, nil
+		}
 		return nil, err
 	}
 
@@ -358,6 +366,10 @@ func attemptNormalDeletion(ctx context.Context, dynamicClient dynamic.Interface,
 	for _, resource := range crd.ResourcesWithFinalizers {
 		err := dynamicClient.Resource(gvr).Namespace(namespace).Delete(ctx, resource.Name, deleteOptions)
 		if err != nil {
+			if strings.Contains(err.Error(), "not found") {
+				fmt.Printf("✅ Resource %s was already deleted (namespace may have been cleaned up)\n", resource.Name)
+				continue
+			}
 			return fmt.Errorf("failed to delete %s: %w", resource.Name, err)
 		}
 		fmt.Printf("🗑️  Deleted %s: %s\n", crd.Name, resource.Name)
@@ -373,6 +385,10 @@ func attemptFinalizerRemovalAndDeletion(ctx context.Context, dynamicClient dynam
 	for _, resource := range crd.ResourcesWithFinalizers {
 		// First, remove finalizers
 		if err := removeCRDResourceFinalizers(ctx, dynamicClient, gvr, namespace, resource.Name); err != nil {
+			if strings.Contains(err.Error(), "not found") {
+				fmt.Printf("✅ Resource %s was already deleted (namespace may have been cleaned up)\n", resource.Name)
+				continue
+			}
 			return fmt.Errorf("failed to remove finalizers from %s: %w", resource.Name, err)
 		}
 
@@ -384,6 +400,10 @@ func attemptFinalizerRemovalAndDeletion(ctx context.Context, dynamicClient dynam
 
 		err := dynamicClient.Resource(gvr).Namespace(namespace).Delete(ctx, resource.Name, deleteOptions)
 		if err != nil {
+			if strings.Contains(err.Error(), "not found") {
+				fmt.Printf("✅ Resource %s was already deleted (namespace may have been cleaned up)\n", resource.Name)
+				continue
+			}
 			return fmt.Errorf("failed to delete %s after finalizer removal: %w", resource.Name, err)
 		}
 
@@ -398,6 +418,10 @@ func removeCRDResourceFinalizers(ctx context.Context, dynamicClient dynamic.Inte
 	// Get the current resource
 	resource, err := dynamicClient.Resource(gvr).Namespace(namespace).Get(ctx, resourceName, metav1.GetOptions{})
 	if err != nil {
+		if strings.Contains(err.Error(), "not found") {
+			fmt.Printf("✅ Resource %s was already deleted (namespace may have been cleaned up)\n", resourceName)
+			return nil
+		}
 		return err
 	}
 
@@ -420,9 +444,17 @@ func removeCRDResourceFinalizers(ctx context.Context, dynamicClient dynamic.Inte
 	)
 
 	if err != nil {
+		if strings.Contains(err.Error(), "not found") {
+			fmt.Printf("✅ Resource %s was already deleted during finalizer removal (namespace may have been cleaned up)\n", resourceName)
+			return nil
+		}
 		// Fallback to update method
 		resource.SetFinalizers([]string{})
 		_, err = dynamicClient.Resource(gvr).Namespace(namespace).Update(ctx, resource, metav1.UpdateOptions{})
+		if err != nil && strings.Contains(err.Error(), "not found") {
+			fmt.Printf("✅ Resource %s was already deleted during finalizer removal (namespace may have been cleaned up)\n", resourceName)
+			return nil
+		}
 	}
 
 	return err
