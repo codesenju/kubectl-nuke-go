@@ -162,7 +162,7 @@ func handleLonghornResources(ctx context.Context, discoveryClient discovery.Disc
 		fmt.Printf("📊 Processed %d Longhorn resources\n", resourcesProcessed)
 		fmt.Printf("💡 Tip: Longhorn resources often have finalizers that prevent deletion\n")
 		fmt.Printf("⏳ Waiting for Longhorn resources to be processed...\n")
-		time.Sleep(5 * time.Second)
+		time.Sleep(2 * time.Second)
 	}
 
 	return nil
@@ -267,7 +267,7 @@ func handleRookCephResources(ctx context.Context, discoveryClient discovery.Disc
 	if rookFound {
 		fmt.Printf("📊 Processed %d Rook-Ceph resources\n", resourcesProcessed)
 		fmt.Printf("⏳ Waiting for Rook-Ceph resources to be processed...\n")
-		time.Sleep(3 * time.Second)
+		time.Sleep(1 * time.Second)
 	}
 
 	return nil
@@ -372,7 +372,7 @@ func handleOpenEBSResources(ctx context.Context, discoveryClient discovery.Disco
 	if openebsFound {
 		fmt.Printf("📊 Processed %d OpenEBS resources\n", resourcesProcessed)
 		fmt.Printf("⏳ Waiting for OpenEBS resources to be processed...\n")
-		time.Sleep(3 * time.Second)
+		time.Sleep(1 * time.Second)
 	}
 
 	return nil
