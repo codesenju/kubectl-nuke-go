@@ -33,7 +33,7 @@ func EnhancedDeleteNamespaceWithOptions(ctx context.Context, clientset kubernete
 	handler := argocd.NewHandler(dynamicClient)
 
 	// Phase 1: Detect ArgoCD applications managing this namespace
-	// Silently check ArgoCD
+	fmt.Printf("🔍 Checking for ArgoCD applications managing namespace: %s\n", namespace)
 	argoCDApps, err := detector.DetectArgoCDAppsForNamespace(ctx, namespace)
 	if err != nil {
 		fmt.Printf("⚠️  Warning: Failed to detect ArgoCD applications: %v\n", err)
@@ -45,7 +45,7 @@ func EnhancedDeleteNamespaceWithOptions(ctx context.Context, clientset kubernete
 			fmt.Printf("  - %s/%s\n", app.GetNamespace(), app.GetName())
 		}
 	} else {
-		// No ArgoCD apps
+		fmt.Printf("ℹ️  No ArgoCD applications found managing this namespace\n")
 	}
 
 	// Phase 2: Discover problematic CRDs (always run for diagnostics)
@@ -71,8 +71,8 @@ func EnhancedDeleteNamespaceWithOptions(ctx context.Context, clientset kubernete
 		}
 
 		// Wait a bit for ArgoCD to clean up resources
-		// Wait for ArgoCD cleanup
-		time.Sleep(2 * time.Second)
+		fmt.Printf("⏳ Waiting for ArgoCD to clean up resources...\n")
+		time.Sleep(10 * time.Second)
 	}
 
 	// Phase 5: Intelligent CRD cleanup based on mode
@@ -129,7 +129,7 @@ func EnhancedDeleteNamespaceWithDryRun(ctx context.Context, clientset kubernetes
 	handler := argocd.NewHandler(dynamicClient)
 
 	// Phase 1: Detect ArgoCD applications managing this namespace
-	// Silently check ArgoCD
+	fmt.Printf("🔍 Checking for ArgoCD applications managing namespace: %s\n", namespace)
 	argoCDApps, err := detector.DetectArgoCDAppsForNamespace(ctx, namespace)
 	if err != nil {
 		fmt.Printf("⚠️  Warning: Failed to detect ArgoCD applications: %v\n", err)
@@ -141,7 +141,7 @@ func EnhancedDeleteNamespaceWithDryRun(ctx context.Context, clientset kubernetes
 			fmt.Printf("  - %s/%s\n", app.GetNamespace(), app.GetName())
 		}
 	} else {
-		// No ArgoCD apps
+		fmt.Printf("ℹ️  No ArgoCD applications found managing this namespace\n")
 	}
 
 	// Phase 2: Discover problematic CRDs (always run for diagnostics)
@@ -171,8 +171,8 @@ func EnhancedDeleteNamespaceWithDryRun(ctx context.Context, clientset kubernetes
 		}
 
 		// Wait a bit for ArgoCD to clean up resources
-		// Wait for ArgoCD cleanup
-		time.Sleep(2 * time.Second)
+		fmt.Printf("⏳ Waiting for ArgoCD to clean up resources...\n")
+		time.Sleep(10 * time.Second)
 	}
 
 	// Phase 5: Intelligent CRD cleanup based on mode

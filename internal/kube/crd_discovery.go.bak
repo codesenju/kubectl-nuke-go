@@ -134,7 +134,7 @@ func findCRDsWithFinalizers(ctx context.Context, dynamicClient dynamic.Interface
 		fmt.Printf("⚠️  Warning: Some API resources may not be accessible: %v\n", err)
 	}
 
-
+	fmt.Printf("🔍 Scanning custom resources for finalizers...\n")
 
 	for _, apiResourceList := range apiResourceLists {
 		// Skip core Kubernetes APIs - focus on custom resources
