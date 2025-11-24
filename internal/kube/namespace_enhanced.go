@@ -75,7 +75,15 @@ func EnhancedDeleteNamespaceWithOptions(ctx context.Context, clientset kubernete
 		time.Sleep(10 * time.Second)
 	}
 
-	// Phase 5: Intelligent CRD cleanup based on mode
+	// Phase 5: Detect and remove problematic webhooks (force mode only)
+	if forceDelete {
+		fmt.Printf("\n🔍 Checking for problematic webhook configurations...\n")
+		if err := DetectAndHandleWebhookIssues(ctx, clientset, true); err != nil {
+			fmt.Printf("⚠️  Warning: Failed to handle webhook issues: %v\n", err)
+		}
+	}
+
+	// Phase 6: Intelligent CRD cleanup based on mode
 	shouldCleanupCRDs := false
 	
 	if forceDelete {
@@ -103,7 +111,7 @@ func EnhancedDeleteNamespaceWithOptions(ctx context.Context, clientset kubernete
 		fmt.Printf("💡 Use --force flag for aggressive CRD cleanup if needed\n")
 	}
 
-	// Phase 6: Proceed with namespace deletion based on mode
+	// Phase 7: Proceed with namespace deletion based on mode
 	if forceDelete {
 		return EnhancedNukeNamespace(ctx, clientset, dynamicClient, namespace, detector)
 	}
@@ -175,7 +183,15 @@ func EnhancedDeleteNamespaceWithDryRun(ctx context.Context, clientset kubernetes
 		time.Sleep(10 * time.Second)
 	}
 
-	// Phase 5: Intelligent CRD cleanup based on mode
+	// Phase 5: Detect and remove problematic webhooks (force mode only)
+	if forceDelete {
+		fmt.Printf("\n🔍 Checking for problematic webhook configurations...\n")
+		if err := DetectAndHandleWebhookIssues(ctx, clientset, true); err != nil {
+			fmt.Printf("⚠️  Warning: Failed to handle webhook issues: %v\n", err)
+		}
+	}
+
+	// Phase 6: Intelligent CRD cleanup based on mode
 	shouldCleanupCRDs := false
 	
 	if forceDelete {
@@ -203,7 +219,7 @@ func EnhancedDeleteNamespaceWithDryRun(ctx context.Context, clientset kubernetes
 		fmt.Printf("💡 Use --force flag for aggressive CRD cleanup if needed\n")
 	}
 
-	// Phase 6: Proceed with namespace deletion based on mode
+	// Phase 7: Proceed with namespace deletion based on mode
 	if forceDelete {
 		return EnhancedNukeNamespace(ctx, clientset, dynamicClient, namespace, detector)
 	}
