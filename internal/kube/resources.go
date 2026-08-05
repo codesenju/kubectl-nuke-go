@@ -1,9 +1,15 @@
 package kube
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
+	"net"
+	"net/http"
+	"os/exec"
+	"strconv"
 	"strings"
 	"time"
 
@@ -42,6 +48,33 @@ func DeleteNamespace(ctx context.Context, clientset kubernetes.Interface, name s
 	return true, false, nil
 }
 
+// DeleteNamespaceWithRecovery keeps normal deletion fast and only performs
+// finalizer recovery when the API reports that deletion is stuck.
+func DeleteNamespaceWithRecovery(ctx context.Context, clientset kubernetes.Interface, name string) error {
+	deleted, terminating, err := DeleteNamespace(ctx, clientset, name)
+	if err != nil || deleted || !terminating {
+		return err
+	}
+
+	return RecoverTerminatingNamespace(ctx, clientset, name)
+}
+
+// RecoverTerminatingNamespace removes namespace finalizers through the proxy
+// endpoint first, then falls back to the typed client implementation.
+func RecoverTerminatingNamespace(ctx context.Context, clientset kubernetes.Interface, name string) error {
+	fmt.Printf("⚠️  Namespace %s is stuck in Terminating; using kubectl proxy finalize recovery\n", name)
+	if _, err := ForceRemoveFinalizersViaProxy(ctx, clientset, name); err == nil {
+		return nil
+	} else {
+		fmt.Printf("⚠️  Proxy finalizer recovery failed: %v\n", err)
+	}
+
+	if _, err := ForceRemoveFinalizers(ctx, clientset, name); err != nil {
+		return fmt.Errorf("remove namespace finalizers: %w", err)
+	}
+	return nil
+}
+
 // ForceRemoveFinalizers removes finalizers from a namespace.
 // Returns true if finalizers were removed, false if no finalizers existed.
 func ForceRemoveFinalizers(ctx context.Context, clientset kubernetes.Interface, name string) (bool, error) {
@@ -55,6 +88,85 @@ func ForceRemoveFinalizers(ctx context.Context, clientset kubernetes.Interface, 
 	ns.ObjectMeta.Finalizers = nil
 	_, err = clientset.CoreV1().Namespaces().Finalize(ctx, ns, metav1.UpdateOptions{})
 	return true, err
+}
+
+// ForceRemoveFinalizersViaProxy uses the same finalize endpoint as
+// `kubectl proxy` based recovery. This avoids admission/client discovery
+// issues that can make the typed Finalize call fail for terminating namespaces.
+func ForceRemoveFinalizersViaProxy(ctx context.Context, clientset kubernetes.Interface, name string) (bool, error) {
+	ns, err := clientset.CoreV1().Namespaces().Get(ctx, name, metav1.GetOptions{})
+	if err != nil {
+		return false, err
+	}
+	if len(ns.Spec.Finalizers) == 0 {
+		return false, nil
+	}
+
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		return false, fmt.Errorf("reserve kubectl proxy port: %w", err)
+	}
+	port := listener.Addr().(*net.TCPAddr).Port
+	_ = listener.Close()
+
+	proxy := exec.CommandContext(ctx, "kubectl", "proxy", "--address=127.0.0.1", "--port="+strconv.Itoa(port))
+	if err := proxy.Start(); err != nil {
+		return false, fmt.Errorf("start kubectl proxy: %w", err)
+	}
+	defer func() {
+		_ = proxy.Process.Kill()
+		_ = proxy.Wait()
+	}()
+
+	baseURL := fmt.Sprintf("http://127.0.0.1:%d", port)
+	client := &http.Client{Timeout: 2 * time.Second}
+	readyURL := baseURL + "/api/"
+	deadline := time.NewTimer(8 * time.Second)
+	defer deadline.Stop()
+	ready := false
+	for !ready {
+		request, requestErr := http.NewRequestWithContext(ctx, http.MethodGet, readyURL, nil)
+		if requestErr == nil {
+			response, requestErr := client.Do(request)
+			if requestErr == nil {
+				_, _ = io.Copy(io.Discard, response.Body)
+				_ = response.Body.Close()
+				ready = response.StatusCode >= http.StatusOK && response.StatusCode < http.StatusMultipleChoices
+			}
+		}
+		if ready {
+			break
+		}
+		select {
+		case <-ctx.Done():
+			return false, ctx.Err()
+		case <-deadline.C:
+			return false, fmt.Errorf("kubectl proxy did not become ready")
+		case <-time.After(100 * time.Millisecond):
+		}
+	}
+
+	ns.Spec.Finalizers = nil
+	body, err := json.Marshal(ns)
+	if err != nil {
+		return false, fmt.Errorf("encode namespace finalize payload: %w", err)
+	}
+	url := fmt.Sprintf("%s/api/v1/namespaces/%s/finalize", baseURL, name)
+	request, err := http.NewRequestWithContext(ctx, http.MethodPut, url, bytes.NewReader(body))
+	if err != nil {
+		return false, err
+	}
+	request.Header.Set("Content-Type", "application/json")
+	response, err := client.Do(request)
+	if err != nil {
+		return false, fmt.Errorf("call namespace finalize endpoint: %w", err)
+	}
+	defer response.Body.Close()
+	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
+		responseBody, _ := io.ReadAll(io.LimitReader(response.Body, 4<<10))
+		return false, fmt.Errorf("namespace finalize endpoint returned %s: %s", response.Status, strings.TrimSpace(string(responseBody)))
+	}
+	return true, nil
 }
 
 // NukeNamespace aggressively deletes a namespace by force-deleting all resources first
@@ -231,6 +343,15 @@ func forceDeleteCommonResources(ctx context.Context, clientset kubernetes.Interf
 
 // aggressiveFinalizerRemoval uses multiple strategies to remove finalizers
 func aggressiveFinalizerRemoval(ctx context.Context, clientset kubernetes.Interface, name string) error {
+	if removed, err := ForceRemoveFinalizersViaProxy(ctx, clientset, name); err == nil {
+		if removed {
+			fmt.Printf("🔧 kubectl proxy finalizer removal successful\n")
+		}
+		return nil
+	} else {
+		fmt.Printf("⚠️  kubectl proxy finalizer removal failed: %v\n", err)
+	}
+
 	// Try the standard finalizer removal first
 	removed, err := ForceRemoveFinalizers(ctx, clientset, name)
 	if err == nil && removed {
@@ -428,7 +549,7 @@ func forceDeleteCustomResources(ctx context.Context, clientset kubernetes.Interf
 					// First, try to remove finalizers if they exist
 					if finalizers := resource.GetFinalizers(); len(finalizers) > 0 {
 						fmt.Printf("🔧 Removing finalizers from %s: %s\n", apiResource.Name, resourceName)
-						
+
 						// Try patch method first (most reliable)
 						patchData := map[string]interface{}{
 							"metadata": map[string]interface{}{
@@ -436,7 +557,7 @@ func forceDeleteCustomResources(ctx context.Context, clientset kubernetes.Interf
 							},
 						}
 						patchBytes, _ := json.Marshal(patchData)
-						
+
 						_, err := dynamicClient.Resource(gvr).Namespace(namespace).Patch(
 							ctx,
 							resourceName,
@@ -444,10 +565,10 @@ func forceDeleteCustomResources(ctx context.Context, clientset kubernetes.Interf
 							patchBytes,
 							metav1.PatchOptions{},
 						)
-						
+
 						if err != nil {
 							fmt.Printf("⚠️  Failed to patch finalizers from %s: %v\n", resourceName, err)
-							
+
 							// Try update method as fallback
 							resource.SetFinalizers([]string{})
 							_, err := dynamicClient.Resource(gvr).Namespace(namespace).Update(
@@ -455,7 +576,7 @@ func forceDeleteCustomResources(ctx context.Context, clientset kubernetes.Interf
 								&resource,
 								metav1.UpdateOptions{},
 							)
-							
+
 							if err != nil {
 								fmt.Printf("⚠️  Failed to update finalizers from %s: %v\n", resourceName, err)
 							}

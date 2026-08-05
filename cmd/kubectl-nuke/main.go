@@ -282,7 +282,7 @@ func deleteNamespace(cmd *cobra.Command, args []string) {
 		if !forceDelete {
 			timeout = 15
 		}
-		
+
 		if kube.WaitForNamespaceDeletion(ctx, clientset, namespace, timeout) {
 			if forceDelete {
 				fmt.Printf("💥 Namespace %s has been completely nuked!\n", namespace)
@@ -291,9 +291,16 @@ func deleteNamespace(cmd *cobra.Command, args []string) {
 			}
 		} else {
 			fmt.Printf("⚠️  Namespace %s may still exist. Check manually with: kubectl get ns %s\n", namespace, namespace)
+			if err := kube.RecoverTerminatingNamespace(ctx, clientset, namespace); err != nil {
+				fmt.Fprintf(os.Stderr, "❌ Failed to recover terminating namespace %s: %v\n", namespace, err)
+				return
+			}
+			if kube.WaitForNamespaceDeletion(ctx, clientset, namespace, timeout) {
+				fmt.Printf("✅ Namespace %s deleted after terminating-state recovery.\n", namespace)
+			}
 		}
 	}
-	
+
 	return
 
 }
@@ -354,7 +361,7 @@ func performUpdate(cmd *cobra.Command, args []string) {
 	fmt.Printf("📋 Current version: %s\n", version)
 
 	checker := updater.NewUpdateChecker(version)
-	
+
 	// Check for updates
 	release, hasUpdate, err := checker.CheckForUpdate()
 	if err != nil {
@@ -402,22 +409,22 @@ func performUpdate(cmd *cobra.Command, args []string) {
 
 func promptUserConfirmation(hasUpdate bool, newVersion string) bool {
 	var message string
-	
+
 	if hasUpdate {
 		message = fmt.Sprintf("Do you want to update to version %s? (y/N): ", newVersion)
 	} else {
 		message = fmt.Sprintf("Do you want to reinstall version %s? (y/N): ", newVersion)
 	}
-	
+
 	fmt.Print(message)
-	
+
 	reader := bufio.NewReader(os.Stdin)
 	response, err := reader.ReadString('\n')
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "❌ Failed to read user input: %v\n", err)
 		return false
 	}
-	
+
 	response = strings.TrimSpace(strings.ToLower(response))
 	return response == "y" || response == "yes"
 }
