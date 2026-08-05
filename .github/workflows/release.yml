@@ -33,6 +33,20 @@ jobs:
             echo "This is a stable release: ${{ github.ref_name }}"
           fi
 
+      - name: Remove existing release assets
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          if ! gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            exit 0
+          fi
+
+          gh release view "$RELEASE_TAG" --json assets --jq '.assets[].name' |
+            while IFS= read -r asset; do
+              [ -z "$asset" ] || gh release delete-asset "$RELEASE_TAG" "$asset" --yes
+            done
+
       - name: Run GoReleaser (Prerelease)
         if: steps.prerelease.outputs.is_prerelease == 'true'
         uses: goreleaser/goreleaser-action@v6
